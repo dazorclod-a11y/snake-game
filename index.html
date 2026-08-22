@@ -181,6 +181,13 @@
          На экране он масштабируется через CSS. -->
     <canvas id="game" width="480" height="480"></canvas>
 
+    <!-- Стартовый экран: показывается при загрузке, пока не нажата кнопка -->
+    <div class="overlay" id="startOverlay">
+      <h2>🐍 Змейка</h2>
+      <div class="final-score">Собирай еду и расти. Не врежься в стены и в себя!</div>
+      <button id="startBtn">Начать игру</button>
+    </div>
+
     <!-- Экран проигрыша: показывается только после Game Over -->
     <div class="overlay hidden" id="overlay">
       <h2>Game Over</h2>
@@ -227,6 +234,8 @@
   const finalScoreEl = document.getElementById('finalScore');
   const overlay = document.getElementById('overlay');
   const restartBtn = document.getElementById('restart');
+  const startOverlay = document.getElementById('startOverlay');
+  const startBtn = document.getElementById('startBtn');
 
   // Читаем рекорд из localStorage (если его нет — 0). Number() превращает строку в число.
   let best = Number(localStorage.getItem(BEST_KEY)) || 0;
@@ -240,8 +249,9 @@
   let gameOver;     // флаг конца игры
   let timer;        // ссылка на игровой цикл (setInterval)
 
-  // ===================== ИНИЦИАЛИЗАЦИЯ / РЕСТАРТ =====================
-  function init() {
+  // ===================== ПОДГОТОВКА ПОЛЯ (без запуска движения) =====================
+  // Расставляет змейку и еду, рисует стартовую картинку, но НЕ запускает таймер.
+  function resetBoard() {
     // Змейка из 3 сегментов в центре поля, смотрит вправо
     const c = Math.floor(CELLS / 2); // центр (10)
     snake = [
@@ -258,12 +268,16 @@
     overlay.classList.add('hidden'); // прячем экран проигрыша
 
     placeFood();  // ставим первую еду
+    clearInterval(timer); // на всякий случай останавливаем прошлый цикл
+    draw();       // рисуем стартовую позицию (змейка стоит на месте)
+  }
 
-    // Перезапускаем игровой цикл
+  // ===================== ЗАПУСК ДВИЖЕНИЯ =====================
+  // Прячет стартовый экран и включает игровой цикл.
+  function startGame() {
+    startOverlay.classList.add('hidden'); // убираем экран со стартовой кнопкой
     clearInterval(timer);
     timer = setInterval(step, SPEED);
-
-    draw(); // сразу рисуем стартовую картинку
   }
 
   // ===================== ЕДА =====================
@@ -426,11 +440,22 @@
     setDir(x, y); // та же логика, что у стрелок и свайпов
   });
 
-  // Кнопка «Начать заново»
-  restartBtn.addEventListener('click', init);
+  // Кнопка «Начать игру» на стартовом экране — запускает движение
+  startBtn.addEventListener('click', () => {
+    resetBoard();  // свежая позиция
+    startGame();   // поехали
+  });
+
+  // Кнопка «Начать заново» после Game Over — сразу новая игра
+  restartBtn.addEventListener('click', () => {
+    resetBoard();
+    startGame();
+  });
 
   // ===================== СТАРТ =====================
-  init();
+  // При загрузке только готовим поле и показываем стартовый экран.
+  // Движение начнётся, когда игрок нажмёт «Начать игру».
+  resetBoard();
 
   // ===================== РЕГИСТРАЦИЯ SERVICE WORKER (PWA) =====================
   // Включает офлайн-режим и делает игру устанавливаемой на телефон.
