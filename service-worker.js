@@ -3,7 +3,7 @@
 
 // Имя кэша с версией. Поднимай версию (v2, v3…), когда меняешь файлы игры,
 // — тогда старый кэш очистится и пользователь получит свежую версию.
-const CACHE = 'snake-game-v4';
+const CACHE = 'snake-game-v5';
 
 // Файлы, которые нужно сохранить для офлайна.
 // Пути ОТНОСИТЕЛЬНЫЕ — работают и на GitHub Pages в подпапке /snake-game/.
@@ -15,10 +15,16 @@ const ASSETS = [
   './icon-512.png'
 ];
 
-// 1) Установка: складываем файлы игры в кэш
+// 1) Установка: складываем файлы игры в кэш.
+//    Тянем СТРОГО из сети (cache: 'no-store'), чтобы в кэш не попала
+//    устаревшая версия из HTTP-кэша браузера.
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(CACHE).then((cache) => cache.addAll(ASSETS))
+    caches.open(CACHE).then((cache) =>
+      Promise.all(ASSETS.map((url) =>
+        fetch(url, { cache: 'no-store' }).then((resp) => cache.put(url, resp))
+      ))
+    )
   );
   self.skipWaiting(); // сразу активируем новый воркер
 });
@@ -41,13 +47,13 @@ self.addEventListener('fetch', (event) => {
   const req = event.request;
   if (req.method !== 'GET') return; // кэшируем только чтение
 
-  // Навигация по странице — сеть в приоритете
+  // Навигация по странице — сеть в приоритете, строго свежая (минуя HTTP-кэш)
   if (req.mode === 'navigate') {
     event.respondWith(
-      fetch(req)
+      fetch(req, { cache: 'no-store' })
         .then((response) => {
           const copy = response.clone();
-          caches.open(CACHE).then((cache) => cache.put(req, copy));
+          caches.open(CACHE).then((cache) => cache.put('./index.html', copy));
           return response;
         })
         .catch(() => caches.match(req).then((r) => r || caches.match('./index.html')))
