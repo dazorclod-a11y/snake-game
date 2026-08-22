@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <!-- Адаптив: поле подстраивается под ширину экрана телефона -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Змейка</title>
+
+  <style>
+    /* ===== Общие стили страницы ===== */
+    :root {
+      --bg: #1a1a2e;        /* фон страницы */
+      --field: #16213e;     /* фон игрового поля */
+      --grid: #0f3460;      /* линии сетки */
+      --snake: #4ade80;     /* тело змейки */
+      --snake-head: #22c55e;/* голова змейки */
+      --food: #f43f5e;      /* еда */
+      --text: #e5e7eb;      /* текст */
+      --accent: #4ade80;    /* акцент (кнопка) */
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+      padding: 16px;
+    }
+
+    h1 { font-size: 1.6rem; letter-spacing: 1px; }
+
+    /* Счёт */
+    .score {
+      font-size: 1.2rem;
+      font-weight: 600;
+    }
+    .score span { color: var(--accent); }
+
+    /* ===== Обёртка поля =====
+       Ширина ограничена, но не больше ширины экрана — это и есть адаптив.
+       aspect-ratio: 1 держит поле квадратным. */
+    .field-wrap {
+      position: relative;
+      width: min(92vw, 480px);
+      aspect-ratio: 1 / 1;
+    }
+
+    /* Сам холст растягивается на всю обёртку */
+    canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+      background: var(--field);
+      border: 2px solid var(--grid);
+      border-radius: 8px;
+      touch-action: none; /* чтобы свайпы не скроллили страницу */
+    }
+
+    /* ===== Экран Game Over (поверх поля) ===== */
+    .overlay {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+      background: rgba(10, 10, 25, 0.85);
+      border-radius: 8px;
+      text-align: center;
+    }
+    .overlay.hidden { display: none; } /* по умолчанию скрыт */
+
+    .overlay h2 { font-size: 1.8rem; color: var(--food); }
+    .overlay .final-score { font-size: 1.2rem; }
+
+    button {
+      font-size: 1.1rem;
+      font-weight: 600;
+      color: #06210f;
+      background: var(--accent);
+      border: none;
+      border-radius: 8px;
+      padding: 12px 24px;
+      cursor: pointer;
+      transition: transform 0.1s ease, filter 0.1s ease;
+    }
+    button:hover { filter: brightness(1.1); }
+    button:active { transform: scale(0.97); }
+
+    /* ===== Крестовина экранных кнопок ===== */
+    .dpad {
+      display: grid;
+      /* 3 колонки × 2 ряда клеток по 56px — форма крестовины */
+      grid-template-columns: repeat(3, 56px);
+      grid-template-rows: repeat(2, 56px);
+      gap: 8px;
+      justify-content: center;
+    }
+    /* Раскладка: вверх — сверху по центру, влево/вниз/вправо — в нижнем ряду */
+    .btn-up    { grid-column: 2; grid-row: 1; }
+    .btn-left  { grid-column: 1; grid-row: 2; }
+    .btn-down  { grid-column: 2; grid-row: 2; }
+    .btn-right { grid-column: 3; grid-row: 2; }
+
+    /* Внешний вид кнопок крестовины (переопределяет базовый стиль button) */
+    .dpad button {
+      width: 56px;             /* крупные — удобно пальцу (> 48px) */
+      height: 56px;
+      min-width: 48px;
+      min-height: 48px;
+      padding: 0;
+      font-size: 1.5rem;
+      color: var(--text);
+      background: var(--grid);
+      border: 1px solid var(--field);
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      touch-action: none;       /* тап не вызывает прокрутку/зум */
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    .dpad button:active {
+      background: var(--accent);
+      color: #06210f;
+      transform: scale(0.94);
+    }
+
+    /* Подсказка по управлению */
+    .hint { font-size: 0.85rem; opacity: 0.7; text-align: center; }
+  </style>
+</head>
+<body>
+
+  <h1>🐍 Змейка</h1>
+  <div class="score">Счёт: <span id="score">0</span> &nbsp;·&nbsp; Рекорд: <span id="best">0</span></div>
+
+  <div class="field-wrap">
+    <!-- Внутреннее разрешение холста = 20 клеток × 24px = 480px.
+         На экране он масштабируется через CSS. -->
+    <canvas id="game" width="480" height="480"></canvas>
+
+    <!-- Экран проигрыша: показывается только после Game Over -->
+    <div class="overlay hidden" id="overlay">
+      <h2>Game Over</h2>
+      <div class="final-score">Твой счёт: <span id="finalScore">0</span></div>
+      <button id="restart">Начать заново</button>
+    </div>
+  </div>
+
+  <!-- Экранные кнопки-стрелки (крестовина). data-dir = "x,y" направление движения -->
+  <div class="dpad" id="dpad">
+    <button class="btn-up"    data-dir="0,-1" aria-label="Вверх">▲</button>
+    <button class="btn-left"  data-dir="-1,0" aria-label="Влево">◀</button>
+    <button class="btn-down"  data-dir="0,1"  aria-label="Вниз">▼</button>
+    <button class="btn-right" data-dir="1,0"  aria-label="Вправо">▶</button>
+  </div>
+
+  <div class="hint">Управление: стрелки на клавиатуре ← ↑ → ↓, кнопки внизу или свайпы на телефоне</div>
+
+  <script>
+  // ===================== НАСТРОЙКИ ИГРЫ =====================
+  const CELLS = 20;              // поле 20×20 клеток
+  const canvas = document.getElementById('game');
+  const ctx = canvas.getContext('2d');
+  const CELL = canvas.width / CELLS; // размер одной клетки в пикселях (480/20 = 24)
+  // ⚙️ СКОРОСТЬ ЗМЕЙКИ — меняй это число под себя.
+  //    Это интервал между шагами в миллисекундах: БОЛЬШЕ число = МЕДЛЕННЕЕ, меньше = быстрее.
+  //    Ориентиры: 120 — быстро, 160 — комфортно (по умолчанию), 220 — спокойно/для новичка.
+  const SPEED = 160;
+
+  // Ключ, под которым рекорд хранится в localStorage браузера
+  const BEST_KEY = 'snakeBestScore';
+
+  // Элементы интерфейса
+  const scoreEl = document.getElementById('score');
+  const bestEl = document.getElementById('best');
+  const finalScoreEl = document.getElementById('finalScore');
+  const overlay = document.getElementById('overlay');
+  const restartBtn = document.getElementById('restart');
+
+  // Читаем рекорд из localStorage (если его нет — 0). Number() превращает строку в число.
+  let best = Number(localStorage.getItem(BEST_KEY)) || 0;
+
+  // ===================== СОСТОЯНИЕ ИГРЫ =====================
+  let snake;        // массив сегментов змейки, [0] — голова. Каждый сегмент = {x, y}
+  let food;         // координаты еды {x, y}
+  let dir;          // текущее направление движения {x, y}
+  let nextDir;      // направление на следующий шаг (защита от разворота в одном кадре)
+  let score;        // счёт
+  let gameOver;     // флаг конца игры
+  let timer;        // ссылка на игровой цикл (setInterval)
+
+  // ===================== ИНИЦИАЛИЗАЦИЯ / РЕСТАРТ =====================
+  function init() {
+    // Змейка из 3 сегментов в центре поля, смотрит вправо
+    const c = Math.floor(CELLS / 2); // центр (10)
+    snake = [
+      { x: c,     y: c }, // голова
+      { x: c - 1, y: c },
+      { x: c - 2, y: c }, // хвост
+    ];
+    dir = { x: 1, y: 0 };     // движемся вправо
+    nextDir = { x: 1, y: 0 };
+    score = 0;
+    gameOver = false;
+    scoreEl.textContent = score;
+    bestEl.textContent = best;       // показываем текущий рекорд
+    overlay.classList.add('hidden'); // прячем экран проигрыша
+
+    placeFood();  // ставим первую еду
+
+    // Перезапускаем игровой цикл
+    clearInterval(timer);
+    timer = setInterval(step, SPEED);
+
+    draw(); // сразу рисуем стартовую картинку
+  }
+
+  // ===================== ЕДА =====================
+  // Ставит еду в случайную свободную клетку (не на теле змейки)
+  function placeFood() {
+    let pos;
+    do {
+      pos = {
+        x: Math.floor(Math.random() * CELLS),
+        y: Math.floor(Math.random() * CELLS),
+      };
+    } while (snake.some(seg => seg.x === pos.x && seg.y === pos.y)); // повторяем, если попали на змейку
+    food = pos;
+  }
+
+  // ===================== ОДИН ШАГ ИГРЫ =====================
+  function step() {
+    if (gameOver) return;
+
+    dir = nextDir; // применяем выбранное направление
+
+    // Новая голова = старая голова + направление
+    const head = { x: snake[0].x + dir.x, y: snake[0].y + dir.y };
+
+    // Проверка 6: врезание в стену → Game Over
+    if (head.x < 0 || head.x >= CELLS || head.y < 0 || head.y >= CELLS) {
+      return endGame();
+    }
+
+    // Проверка 7: врезание в себя → Game Over
+    if (snake.some(seg => seg.x === head.x && seg.y === head.y)) {
+      return endGame();
+    }
+
+    // Двигаем змейку: добавляем новую голову вперёд
+    snake.unshift(head);
+
+    // Проверка 4: съели еду?
+    if (head.x === food.x && head.y === food.y) {
+      score++;                     // счёт +1
+      scoreEl.textContent = score;
+      placeFood();                 // новая еда (змейка выросла — хвост НЕ убираем)
+    } else {
+      snake.pop();                 // не ели — убираем хвост (длина не меняется)
+    }
+
+    draw();
+  }
+
+  // ===================== КОНЕЦ ИГРЫ =====================
+  function endGame() {
+    gameOver = true;
+    clearInterval(timer);
+    finalScoreEl.textContent = score;
+
+    // Сравниваем счёт с рекордом. Если побили — сохраняем новый рекорд в localStorage.
+    if (score > best) {
+      best = score;
+      localStorage.setItem(BEST_KEY, best); // запись переживёт перезагрузку страницы
+      bestEl.textContent = best;            // обновляем рекорд на экране
+    }
+
+    overlay.classList.remove('hidden'); // показываем экран со счётом и кнопкой
+  }
+
+  // ===================== ОТРИСОВКА =====================
+  function draw() {
+    // Очищаем поле
+    ctx.fillStyle = getCss('--field');
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // Рисуем сетку (тонкие линии)
+    ctx.strokeStyle = getCss('--grid');
+    ctx.lineWidth = 1;
+    for (let i = 1; i < CELLS; i++) {
+      ctx.beginPath();
+      ctx.moveTo(i * CELL, 0);
+      ctx.lineTo(i * CELL, canvas.height);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(0, i * CELL);
+      ctx.lineTo(canvas.width, i * CELL);
+      ctx.stroke();
+    }
+
+    // Рисуем еду (кружок)
+    drawCircle(food.x, food.y, getCss('--food'));
+
+    // Рисуем змейку (голова ярче тела)
+    snake.forEach((seg, index) => {
+      ctx.fillStyle = index === 0 ? getCss('--snake-head') : getCss('--snake');
+      roundRect(seg.x * CELL + 1, seg.y * CELL + 1, CELL - 2, CELL - 2, 5);
+    });
+  }
+
+  // Вспомогательное: клетка со скруглёнными углами
+  function roundRect(x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.roundRect(x, y, w, h, r);
+    ctx.fill();
+  }
+
+  // Вспомогательное: круг в центре клетки (для еды)
+  function drawCircle(cx, cy, color) {
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(cx * CELL + CELL / 2, cy * CELL + CELL / 2, CELL / 2 - 3, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Вспомогательное: берём цвет из CSS-переменных
+  function getCss(name) {
+    return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  }
+
+  // ===================== УПРАВЛЕНИЕ КЛАВИАТУРОЙ =====================
+  document.addEventListener('keydown', (e) => {
+    switch (e.key) {
+      case 'ArrowUp':    setDir(0, -1); break;
+      case 'ArrowDown':  setDir(0,  1); break;
+      case 'ArrowLeft':  setDir(-1, 0); break;
+      case 'ArrowRight': setDir(1,  0); break;
+      default: return;
+    }
+    e.preventDefault(); // чтобы стрелки не скроллили страницу
+  });
+
+  // Меняем направление, запрещая разворот на 180° (иначе змейка врежется в себя)
+  function setDir(x, y) {
+    if (dir.x === -x && dir.y === -y) return; // это разворот назад — игнорируем
+    nextDir = { x, y };
+  }
+
+  // ===================== УПРАВЛЕНИЕ СВАЙПАМИ (для телефона) =====================
+  let touchStart = null;
+  canvas.addEventListener('touchstart', (e) => {
+    touchStart = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+  });
+  canvas.addEventListener('touchend', (e) => {
+    if (!touchStart) return;
+    const dx = e.changedTouches[0].clientX - touchStart.x;
+    const dy = e.changedTouches[0].clientY - touchStart.y;
+    // Определяем, куда был свайп сильнее — по горизонтали или вертикали
+    if (Math.abs(dx) > Math.abs(dy)) {
+      setDir(dx > 0 ? 1 : -1, 0);
+    } else {
+      setDir(0, dy > 0 ? 1 : -1);
+    }
+    touchStart = null;
+  });
+
+  // ===================== УПРАВЛЕНИЕ ЭКРАННЫМИ КНОПКАМИ =====================
+  // Один обработчик на всю крестовину. pointerdown срабатывает мгновенно
+  // и на мышке, и на тапе пальцем.
+  document.getElementById('dpad').addEventListener('pointerdown', (e) => {
+    const btn = e.target.closest('button[data-dir]');
+    if (!btn) return;
+    e.preventDefault(); // без задержки и без «увода» фокуса на кнопку
+    const [x, y] = btn.dataset.dir.split(',').map(Number);
+    setDir(x, y); // та же логика, что у стрелок и свайпов
+  });
+
+  // Кнопка «Начать заново»
+  restartBtn.addEventListener('click', init);
+
+  // ===================== СТАРТ =====================
+  init();
+  </script>
+</body>
+</html>
