@@ -6,6 +6,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Змейка</title>
 
+  <!-- PWA: манифест, цвет темы и иконка для установки на телефон -->
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#16213e">
+  <link rel="apple-touch-icon" href="icon-192.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Змейка">
+
   <style>
     /* ===== Общие стили страницы ===== */
     :root {
@@ -391,6 +398,17 @@
 
   // ===================== СТАРТ =====================
   init();
+
+  // ===================== РЕГИСТРАЦИЯ SERVICE WORKER (PWA) =====================
+  // Включает офлайн-режим и делает игру устанавливаемой на телефон.
+  // Путь относительный — работает и на GitHub Pages в подпапке /snake-game/.
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('service-worker.js')
+        .then(reg => console.log('Service worker зарегистрирован:', reg.scope))
+        .catch(err => console.warn('Service worker не зарегистрировался:', err));
+    });
+  }
   </script>
 </body>
 </html>

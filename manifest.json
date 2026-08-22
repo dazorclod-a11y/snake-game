@@ -1,0 +1,26 @@
+{
+  "name": "Змейка",
+  "short_name": "Змейка",
+  "description": "Классическая игра «Змейка» на HTML5 Canvas — управление стрелками, кнопками и свайпами, рекорд сохраняется.",
+  "lang": "ru",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#1a1a2e",
+  "theme_color": "#16213e",
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
