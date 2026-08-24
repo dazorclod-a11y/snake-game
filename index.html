@@ -90,6 +90,26 @@
     .overlay h2 { font-size: 1.8rem; color: var(--food); }
     .overlay .final-score { font-size: 1.2rem; }
 
+    /* Вторичная кнопка «Поделиться» — тёмная, чтобы отличалась от зелёной «Начать заново» */
+    button.btn-secondary {
+      color: var(--text);
+      background: var(--grid);
+      border: 1px solid var(--field);
+      font-size: 1rem;
+      padding: 10px 20px;
+    }
+    button.btn-secondary:hover { filter: brightness(1.15); }
+
+    /* Сообщение «Скопировано!» — появляется плавно, потом прячется */
+    .share-msg {
+      min-height: 1.1em;
+      font-size: 0.9rem;
+      color: var(--accent);
+      opacity: 0;
+      transition: opacity 0.2s ease;
+    }
+    .share-msg.show { opacity: 1; }
+
     button {
       font-size: 1.1rem;
       font-weight: 600;
@@ -193,6 +213,9 @@
       <h2>Game Over</h2>
       <div class="final-score">Твой счёт: <span id="finalScore">0</span></div>
       <button id="restart">Начать заново</button>
+      <button id="share" class="btn-secondary">📤 Поделиться результатом</button>
+      <!-- Сообщение после копирования в буфер (для десктопа без шеринга) -->
+      <div class="share-msg" id="shareMsg"></div>
     </div>
   </div>
 
@@ -450,6 +473,66 @@
   restartBtn.addEventListener('click', () => {
     resetBoard();
     startGame();
+  });
+
+  // ===================== ПОДЕЛИТЬСЯ РЕЗУЛЬТАТОМ =====================
+  const shareBtn = document.getElementById('share');
+  const shareMsg = document.getElementById('shareMsg');
+  let msgTimer;
+
+  // Собираем текст: счёт + ссылка на игру.
+  // location.origin + pathname даёт чистый адрес игры (на Pages — .../snake-game/).
+  function buildShareText() {
+    const url = location.origin + location.pathname;
+    return `Я набрал ${score} очков в Змейке! Сможешь больше? ${url}`;
+  }
+
+  // Показать сообщение и через пару секунд спрятать
+  function showShareMsg(text) {
+    shareMsg.textContent = text;
+    shareMsg.classList.add('show');
+    clearTimeout(msgTimer);
+    msgTimer = setTimeout(() => shareMsg.classList.remove('show'), 2500);
+  }
+
+  // Фолбэк: копируем текст в буфер обмена
+  async function copyToClipboard(text) {
+    try {
+      await navigator.clipboard.writeText(text);
+      showShareMsg('Скопировано! Отправь другу');
+    } catch (e) {
+      // Запасной способ для старых браузеров
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      try {
+        document.execCommand('copy');
+        showShareMsg('Скопировано! Отправь другу');
+      } catch (_) {
+        showShareMsg('Не удалось скопировать');
+      }
+      document.body.removeChild(ta);
+    }
+  }
+
+  shareBtn.addEventListener('click', async () => {
+    const text = buildShareText();
+    // 1) Пробуем системное окно шеринга (в основном мобильные)
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: 'Змейка', text: text });
+        return; // успешно поделились
+      } catch (err) {
+        // Пользователь просто закрыл окно — ничего не делаем
+        if (err && err.name === 'AbortError') return;
+        // Иначе (шеринг не сработал) — уходим в фолбэк ниже
+      }
+    }
+    // 2) Фолбэк для десктопа/неподдерживающих браузеров — копируем в буфер
+    copyToClipboard(text);
   });
 
   // ===================== СТАРТ =====================
