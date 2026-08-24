@@ -518,20 +518,29 @@
     }
   }
 
-  shareBtn.addEventListener('click', async () => {
-    const text = buildShareText();
-    // 1) Пробуем системное окно шеринга (в основном мобильные)
-    if (navigator.share) {
-      try {
-        await navigator.share({ title: 'Змейка', text: text });
-        return; // успешно поделились
-      } catch (err) {
-        // Пользователь просто закрыл окно — ничего не делаем
-        if (err && err.name === 'AbortError') return;
-        // Иначе (шеринг не сработал) — уходим в фолбэк ниже
-      }
+  // Телефон это или компьютер? На телефоне удобнее системное окно шеринга,
+  // на компьютере — копирование в буфер.
+  function isMobile() {
+    if (navigator.userAgentData && typeof navigator.userAgentData.mobile === 'boolean') {
+      return navigator.userAgentData.mobile;
     }
-    // 2) Фолбэк для десктопа/неподдерживающих браузеров — копируем в буфер
+    return /Android|iPhone|iPad|iPod|Mobile|Opera Mini|IEMobile/i.test(navigator.userAgent);
+  }
+
+  shareBtn.addEventListener('click', () => {
+    const text = buildShareText();
+
+    // ТЕЛЕФОН + есть системный шеринг → открываем родное окно «Поделиться»
+    if (isMobile() && navigator.share) {
+      navigator.share({ title: 'Змейка', text: text }).catch((err) => {
+        // Отмена пользователем — ничего; иначе копируем как запасной вариант
+        if (!err || err.name !== 'AbortError') copyToClipboard(text);
+      });
+      return;
+    }
+
+    // КОМПЬЮТЕР (или нет системного шеринга) → сразу копируем в буфер,
+    // прямо в рамках клика, чтобы браузер разрешил доступ к буферу.
     copyToClipboard(text);
   });
 
