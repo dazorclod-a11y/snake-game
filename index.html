@@ -49,6 +49,17 @@
       font-weight: 600;
     }
     .score span { color: var(--accent); }
+    /* Нарисованная монета (вместо эмодзи 🪙 — рендерится одинаково на всех ОС) */
+    .coin-icon {
+      display: inline-block;
+      width: 0.95em;
+      height: 0.95em;
+      border-radius: 50%;
+      background: radial-gradient(circle at 35% 30%, #ffe27a, #f5b301 70%, #c98a00);
+      border: 1px solid #b37b00;
+      vertical-align: -0.12em;
+      box-shadow: inset 0 0 0 2px rgba(255,255,255,0.25);
+    }
 
     /* ===== Обёртка поля =====
        Ширина ограничена, но не больше ширины экрана — это и есть адаптив.
@@ -194,7 +205,7 @@
 <body>
 
   <h1>🐍 Змейка</h1>
-  <div class="score">Счёт: <span id="score">0</span> &nbsp;·&nbsp; Рекорд: <span id="best">0</span> &nbsp;·&nbsp; 🪙 <span id="coins">0</span></div>
+  <div class="score">Счёт: <span id="score">0</span> &nbsp;·&nbsp; Рекорд: <span id="best">0</span> &nbsp;·&nbsp; <span class="coin-icon" aria-hidden="true"></span> <span id="coins">0</span></div>
 
   <div class="field-wrap">
     <!-- Внутреннее разрешение холста = 20 клеток × 24px = 480px.
