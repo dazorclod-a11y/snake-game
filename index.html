@@ -437,6 +437,8 @@
   <script src="storage.js"></script>
   <!-- Логика магазина/монет — общий модуль для игры и автотестов (npm test) -->
   <script src="shop-logic.js"></script>
+  <!-- Чистая логика движения змейки — общий модуль для игры и автотестов -->
+  <script src="game-logic.js"></script>
   <script>
   // ===================== НАСТРОЙКИ ИГРЫ =====================
   const CELLS = 20;              // поле 20×20 клеток
@@ -636,24 +638,18 @@
 
     dir = nextDir; // применяем выбранное направление
 
-    // Новая голова = старая голова + направление
-    const head = { x: snake[0].x + dir.x, y: snake[0].y + dir.y };
+    // Считаем новое состояние ЧИСТОЙ логикой (правила — в game-logic.js)
+    const result = GameLogic.advance(snake, dir, food, CELLS);
 
-    // Проверка 6: врезание в стену → Game Over
-    if (head.x < 0 || head.x >= CELLS || head.y < 0 || head.y >= CELLS) {
+    // Проверки 6 и 7: врезание в стену или в себя → Game Over
+    if (result.gameOver) {
       return endGame();
     }
 
-    // Проверка 7: врезание в себя → Game Over
-    if (snake.some(seg => seg.x === head.x && seg.y === head.y)) {
-      return endGame();
-    }
+    snake = result.snake; // обновляем змейку (выросла или сдвинулась)
 
-    // Двигаем змейку: добавляем новую голову вперёд
-    snake.unshift(head);
-
-    // Проверка 4: съели еду?
-    if (head.x === food.x && head.y === food.y) {
+    // Проверка 4: съели еду? (побочные эффекты — здесь, вне чистой логики)
+    if (result.ate) {
       score++;                     // счёт +1
       scoreEl.textContent = score;
 
@@ -664,9 +660,7 @@
 
       playEat();                   // звук поедания
       vibrate(30);                 // короткая вибрация
-      placeFood();                 // новая еда (змейка выросла — хвост НЕ убираем)
-    } else {
-      snake.pop();                 // не ели — убираем хвост (длина не меняется)
+      placeFood();                 // новая еда
     }
 
     draw();
@@ -792,10 +786,9 @@
     e.preventDefault(); // чтобы стрелки не скроллили страницу
   });
 
-  // Меняем направление, запрещая разворот на 180° (иначе змейка врежется в себя)
+  // Меняем направление, запрещая разворот на 180° (правило — в game-logic.js)
   function setDir(x, y) {
-    if (dir.x === -x && dir.y === -y) return; // это разворот назад — игнорируем
-    nextDir = { x, y };
+    nextDir = GameLogic.safeDirection(dir, { x: x, y: y });
   }
 
   // ===================== УПРАВЛЕНИЕ СВАЙПАМИ (для телефона) =====================

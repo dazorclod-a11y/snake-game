@@ -3,7 +3,7 @@
 
 // Имя кэша с версией. Поднимай версию (v2, v3…), когда меняешь файлы игры,
 // — тогда старый кэш очистится и пользователь получит свежую версию.
-const CACHE = 'snake-game-v22';
+const CACHE = 'snake-game-v23';
 
 // Файлы, которые нужно сохранить для офлайна.
 // Пути ОТНОСИТЕЛЬНЫЕ — работают и на GitHub Pages в подпапке /snake-game/.
@@ -12,6 +12,7 @@ const ASSETS = [
   './index.html',
   './storage.js',
   './shop-logic.js',
+  './game-logic.js',
   './manifest.json',
   './icon-192.png',
   './icon-512.png'
