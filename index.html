@@ -372,6 +372,10 @@
   const OWNED_KEY = 'snakeOwnedSkins';   // список купленных скинов (JSON-массив id)
   const SELECTED_KEY = 'snakeSelectedSkin'; // id выбранного скина
 
+  // Секретная «соль» для контрольной суммы монет. Не криптография —
+  // просто чтобы случайная правка монет в консоли не прошла проверку.
+  const COINS_SALT = 'snk_2026_x9f3';
+
   // Элементы интерфейса
   const scoreEl = document.getElementById('score');
   const bestEl = document.getElementById('best');
@@ -385,8 +389,36 @@
   // Читаем рекорд из localStorage (если его нет — 0). Number() превращает строку в число.
   let best = Number(localStorage.getItem(BEST_KEY)) || 0;
 
+  // ---- Монеты с защитой от ручной подделки ----
+  // Простой строковый хеш (djb2) от соли + значения. Не крипто, но случайную
+  // правку числа в localStorage без пересчёта хеша он ловит.
+  function coinsHash(n) {
+    const s = COINS_SALT + ':' + n;
+    let h = 5381;
+    for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) >>> 0;
+    return h.toString(36);
+  }
+  // Сохраняем монеты в формате "значение|контрольная_сумма"
+  function saveCoins() {
+    localStorage.setItem(COINS_KEY, coins + '|' + coinsHash(coins));
+  }
+  // Читаем и проверяем. Если формат сломан или сумма не сходится — сброс к 0.
+  function loadCoins() {
+    const raw = localStorage.getItem(COINS_KEY);
+    if (!raw) return 0; // данных ещё нет — начинаем с 0
+    const sep = raw.indexOf('|');
+    const val = Number(raw.slice(0, sep));
+    const hash = raw.slice(sep + 1);
+    if (sep === -1 || !Number.isInteger(val) || val < 0 || hash !== coinsHash(val)) {
+      // Данные изменены вручную или повреждены → сбрасываем баланс
+      localStorage.setItem(COINS_KEY, '0|' + coinsHash(0));
+      return 0;
+    }
+    return val;
+  }
+
   // Монеты — накопительный итог: сохраняются между играми и после перезагрузки.
-  let coins = Number(localStorage.getItem(COINS_KEY)) || 0;
+  let coins = loadCoins();
 
   // Купленные скины (классический всегда бесплатный и уже куплен)
   let ownedSkins;
@@ -478,10 +510,10 @@
       score++;                     // счёт +1
       scoreEl.textContent = score;
 
-      // Монеты: +COINS_PER_FOOD и сразу сохраняем в localStorage
+      // Монеты: +COINS_PER_FOOD и сразу сохраняем (с контрольной суммой)
       coins += COINS_PER_FOOD;
       coinsEl.textContent = coins;
-      localStorage.setItem(COINS_KEY, coins);
+      saveCoins();
 
       placeFood();                 // новая еда (змейка выросла — хвост НЕ убираем)
     } else {
@@ -775,7 +807,7 @@
   function buySkin(skin) {
     if (coins < skin.price || ownedSkins.includes(skin.id)) return;
     coins -= skin.price;
-    localStorage.setItem(COINS_KEY, coins);
+    saveCoins();                      // сохраняем с контрольной суммой
     coinsEl.textContent = coins;      // обновляем баланс на главном экране
     ownedSkins.push(skin.id);
     selectedSkin = skin.id;           // купил — сразу применяем
