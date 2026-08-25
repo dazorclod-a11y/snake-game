@@ -298,6 +298,7 @@
       <button id="startBtn">Начать игру</button>
       <button id="shopBtnStart" class="btn-secondary">Магазин скинов</button>
       <button class="btn-secondary mute-btn">Звук: вкл</button>
+      <button class="btn-secondary vibro-btn">Вибрация: вкл</button>
     </div>
 
     <!-- Экран проигрыша: показывается только после Game Over -->
@@ -339,6 +340,7 @@
       </div>
       <div class="shop-list" id="shopList"><!-- карточки скинов рисует JS --></div>
       <button class="btn-secondary mute-btn">Звук: вкл</button>
+      <button class="btn-secondary vibro-btn">Вибрация: вкл</button>
       <button id="shopClose">Закрыть</button>
     </div>
   </div>
@@ -467,6 +469,18 @@
     tone(1320, 220, 'triangle', 0.2, 0.1);
   }
 
+  // ===================== ВИБРАЦИЯ (haptics для мобильных) =====================
+  const VIBRO_KEY = 'snakeVibro';
+  let vibroOn = localStorage.getItem(VIBRO_KEY) !== '0'; // по умолчанию включена
+
+  // Безопасная вибрация: если выключена или устройство не поддерживает — тихо выходим.
+  // pattern — число (мс) или массив [вибро, пауза, вибро, ...].
+  function vibrate(pattern) {
+    if (!vibroOn) return;
+    if (typeof navigator === 'undefined' || typeof navigator.vibrate !== 'function') return; // ПК/iOS — нет API
+    try { navigator.vibrate(pattern); } catch (e) { /* на всякий случай не роняем игру */ }
+  }
+
   // ===================== СОСТОЯНИЕ ИГРЫ =====================
   let snake;        // массив сегментов змейки, [0] — голова. Каждый сегмент = {x, y}
   let food;         // координаты еды {x, y}
@@ -555,6 +569,7 @@
       saveCoins();
 
       playEat();                   // звук поедания
+      vibrate(30);                 // короткая вибрация
       placeFood();                 // новая еда (змейка выросла — хвост НЕ убираем)
     } else {
       snake.pop();                 // не ели — убираем хвост (длина не меняется)
@@ -568,6 +583,7 @@
     gameOver = true;
     clearInterval(timer);
     playGameOver();                // драматичный звук проигрыша
+    vibrate([120, 50, 180]);       // более длинная вибрация проигрыша
     finalScoreEl.textContent = score;
 
     // Сравниваем счёт с рекордом. Если побили — сохраняем новый рекорд в localStorage.
@@ -856,6 +872,7 @@
     const res = ShopLogic.buy(playerState(), skin);
     if (!res.ok) return;              // не хватает монет или уже куплен
     playPurchase();                   // звон монет
+    vibrate([20, 30, 20]);            // вибрация покупки
     coins = res.state.coins;
     ownedSkins = res.state.owned;
     selectedSkin = res.state.selected; // купил — сразу применяем
@@ -890,6 +907,23 @@
 
   muteBtns.forEach((b) => b.addEventListener('click', () => setMute(!muted)));
   updateMuteBtns(); // показать актуальное состояние при загрузке
+
+  // ===================== ПЕРЕКЛЮЧАТЕЛЬ ВИБРАЦИИ =====================
+  const vibroBtns = document.querySelectorAll('.vibro-btn');
+
+  function updateVibroBtns() {
+    vibroBtns.forEach((b) => { b.textContent = vibroOn ? 'Вибрация: вкл' : 'Вибрация: выкл'; });
+  }
+
+  function setVibro(on) {
+    vibroOn = on;
+    localStorage.setItem(VIBRO_KEY, on ? '1' : '0'); // сохраняем состояние
+    updateVibroBtns();
+    if (vibroOn) vibrate(20); // включили — коротко «дзинь» как подтверждение (на мобильном)
+  }
+
+  vibroBtns.forEach((b) => b.addEventListener('click', () => setVibro(!vibroOn)));
+  updateVibroBtns();
 
   // ===================== СТАРТ =====================
   // При загрузке только готовим поле и показываем стартовый экран.
