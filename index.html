@@ -194,7 +194,7 @@
 <body>
 
   <h1>🐍 Змейка</h1>
-  <div class="score">Счёт: <span id="score">0</span> &nbsp;·&nbsp; Рекорд: <span id="best">0</span></div>
+  <div class="score">Счёт: <span id="score">0</span> &nbsp;·&nbsp; Рекорд: <span id="best">0</span> &nbsp;·&nbsp; 🪙 <span id="coins">0</span></div>
 
   <div class="field-wrap">
     <!-- Внутреннее разрешение холста = 20 клеток × 24px = 480px.
@@ -248,12 +248,17 @@
   //    Ориентиры: 120 — быстро, 160 — комфортно (по умолчанию), 220 — спокойно/для новичка.
   const SPEED = 280;
 
-  // Ключ, под которым рекорд хранится в localStorage браузера
+  // 🪙 СКОЛЬКО МОНЕТ ДАВАТЬ ЗА ОДНУ ЕДУ — меняй это число под себя.
+  const COINS_PER_FOOD = 1;
+
+  // Ключи, под которыми данные хранятся в localStorage браузера
   const BEST_KEY = 'snakeBestScore';
+  const COINS_KEY = 'snakeCoins';
 
   // Элементы интерфейса
   const scoreEl = document.getElementById('score');
   const bestEl = document.getElementById('best');
+  const coinsEl = document.getElementById('coins');
   const finalScoreEl = document.getElementById('finalScore');
   const overlay = document.getElementById('overlay');
   const restartBtn = document.getElementById('restart');
@@ -262,6 +267,9 @@
 
   // Читаем рекорд из localStorage (если его нет — 0). Number() превращает строку в число.
   let best = Number(localStorage.getItem(BEST_KEY)) || 0;
+
+  // Монеты — накопительный итог: сохраняются между играми и после перезагрузки.
+  let coins = Number(localStorage.getItem(COINS_KEY)) || 0;
 
   // ===================== СОСТОЯНИЕ ИГРЫ =====================
   let snake;        // массив сегментов змейки, [0] — голова. Каждый сегмент = {x, y}
@@ -288,6 +296,7 @@
     gameOver = false;
     scoreEl.textContent = score;
     bestEl.textContent = best;       // показываем текущий рекорд
+    coinsEl.textContent = coins;     // монеты НЕ сбрасываем — просто показываем накопленное
     overlay.classList.add('hidden'); // прячем экран проигрыша
 
     placeFood();  // ставим первую еду
@@ -342,6 +351,12 @@
     if (head.x === food.x && head.y === food.y) {
       score++;                     // счёт +1
       scoreEl.textContent = score;
+
+      // Монеты: +COINS_PER_FOOD и сразу сохраняем в localStorage
+      coins += COINS_PER_FOOD;
+      coinsEl.textContent = coins;
+      localStorage.setItem(COINS_KEY, coins);
+
       placeFood();                 // новая еда (змейка выросла — хвост НЕ убираем)
     } else {
       snake.pop();                 // не ели — убираем хвост (длина не меняется)
