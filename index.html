@@ -91,11 +91,14 @@
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      gap: 16px;
+      gap: 8px;
+      padding: 10px;
+      overflow-y: auto;      /* если кнопок много — можно прокрутить, не обрежется */
       background: rgba(10, 10, 25, 0.85);
       border-radius: 8px;
       text-align: center;
     }
+    .overlay button { flex: none; }  /* кнопки не сжимаются в узкую полоску */
     .overlay.hidden { display: none; } /* по умолчанию скрыт */
 
     .overlay h2 { font-size: 1.8rem; color: var(--food); }
@@ -299,6 +302,7 @@
       <button id="shopBtnStart" class="btn-secondary">Магазин скинов</button>
       <button class="btn-secondary mute-btn">Звук: вкл</button>
       <button class="btn-secondary vibro-btn">Вибрация: вкл</button>
+      <button class="btn-secondary cb-btn">Цвет: обычный</button>
     </div>
 
     <!-- Экран проигрыша: показывается только после Game Over -->
@@ -341,6 +345,7 @@
       <div class="shop-list" id="shopList"><!-- карточки скинов рисует JS --></div>
       <button class="btn-secondary mute-btn">Звук: вкл</button>
       <button class="btn-secondary vibro-btn">Вибрация: вкл</button>
+      <button class="btn-secondary cb-btn">Цвет: обычный</button>
       <button id="shopClose">Закрыть</button>
     </div>
   </div>
@@ -468,6 +473,10 @@
     tone(880, 120, 'triangle', 0.2, 0);
     tone(1320, 220, 'triangle', 0.2, 0.1);
   }
+
+  // ===================== ЦВЕТОВОЙ РЕЖИМ ДЛЯ ДАЛЬТОНИКОВ =====================
+  const CB_KEY = 'snakeColorblind';
+  let colorblind = localStorage.getItem(CB_KEY) === '1'; // по умолчанию выключен (обычный режим)
 
   // ===================== ВИБРАЦИЯ (haptics для мобильных) =====================
   const VIBRO_KEY = 'snakeVibro';
@@ -616,23 +625,46 @@
       ctx.stroke();
     }
 
-    // Рисуем еду (кружок)
-    drawCircle(food.x, food.y, getCss('--food'));
+    if (colorblind) {
+      // ===== Режим для дальтоников: отличаем ФОРМОЙ + контрастной сине-жёлтой палитрой =====
+      // Еда — ЖЁЛТЫЙ круг с тёмной обводкой (круглая форма ≠ квадратной змейке)
+      const fcx = food.x * CELL + CELL / 2, fcy = food.y * CELL + CELL / 2, fr = CELL / 2 - 3;
+      ctx.fillStyle = '#F0E442';
+      ctx.beginPath(); ctx.arc(fcx, fcy, fr, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = '#1a1a2e'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(fcx, fcy, fr, 0, Math.PI * 2); ctx.stroke();
 
-    // Рисуем змейку в цветах выбранного скина (голова ярче тела)
-    const skin = ShopLogic.activeSkin(SKINS, selectedSkin);
-    snake.forEach((seg, index) => {
-      let color;
-      if (skin.body === 'rainbow') {
-        // Радужный скин: каждый сегмент — свой оттенок
-        const hue = (index * 22) % 360;
-        color = `hsl(${hue}, 80%, ${index === 0 ? 55 : 62}%)`;
-      } else {
-        color = index === 0 ? skin.head : skin.body;
-      }
-      ctx.fillStyle = color;
-      roundRect(seg.x * CELL + 1, seg.y * CELL + 1, CELL - 2, CELL - 2, 5);
-    });
+      // Змейка — СИНИЕ КВАДРАТЫ с светлой рамкой (узор); у головы доп. метка
+      snake.forEach((seg, index) => {
+        const x = seg.x * CELL + 1, y = seg.y * CELL + 1, s = CELL - 2;
+        ctx.fillStyle = index === 0 ? '#013a63' : '#0072B2'; // голова темнее
+        ctx.fillRect(x, y, s, s);
+        ctx.strokeStyle = '#cfe8ff'; ctx.lineWidth = 2;        // контрастная рамка
+        ctx.strokeRect(x + 1, y + 1, s - 2, s - 2);
+        if (index === 0) {                                     // метка головы — светлый квадрат
+          ctx.fillStyle = '#56B4E9';
+          ctx.fillRect(x + s * 0.3, y + s * 0.3, s * 0.4, s * 0.4);
+        }
+      });
+    } else {
+      // ===== Обычный режим (как раньше) =====
+      // Еда — кружок
+      drawCircle(food.x, food.y, getCss('--food'));
+
+      // Змейка в цветах выбранного скина (голова ярче тела)
+      const skin = ShopLogic.activeSkin(SKINS, selectedSkin);
+      snake.forEach((seg, index) => {
+        let color;
+        if (skin.body === 'rainbow') {
+          const hue = (index * 22) % 360;
+          color = `hsl(${hue}, 80%, ${index === 0 ? 55 : 62}%)`;
+        } else {
+          color = index === 0 ? skin.head : skin.body;
+        }
+        ctx.fillStyle = color;
+        roundRect(seg.x * CELL + 1, seg.y * CELL + 1, CELL - 2, CELL - 2, 5);
+      });
+    }
   }
 
   // Вспомогательное: клетка со скруглёнными углами
@@ -924,6 +956,23 @@
 
   vibroBtns.forEach((b) => b.addEventListener('click', () => setVibro(!vibroOn)));
   updateVibroBtns();
+
+  // ===================== ПЕРЕКЛЮЧАТЕЛЬ ЦВЕТОВОГО РЕЖИМА =====================
+  const cbBtns = document.querySelectorAll('.cb-btn');
+
+  function updateCbBtns() {
+    cbBtns.forEach((b) => { b.textContent = colorblind ? 'Цвет: для дальтоников' : 'Цвет: обычный'; });
+  }
+
+  function setColorblind(on) {
+    colorblind = on;
+    localStorage.setItem(CB_KEY, on ? '1' : '0'); // сохраняем режим
+    updateCbBtns();
+    draw(); // мгновенная перерисовка без перезагрузки
+  }
+
+  cbBtns.forEach((b) => b.addEventListener('click', () => setColorblind(!colorblind)));
+  updateCbBtns();
 
   // ===================== СТАРТ =====================
   // При загрузке только готовим поле и показываем стартовый экран.
