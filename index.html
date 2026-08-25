@@ -433,6 +433,8 @@
     <button id="updateBtn">Обновить</button>
   </div>
 
+  <!-- Единый модуль хранения данных + точка подключения онлайна (Supabase, Модуль 5) -->
+  <script src="storage.js"></script>
   <!-- Логика магазина/монет — общий модуль для игры и автотестов (npm test) -->
   <script src="shop-logic.js"></script>
   <script>
@@ -460,11 +462,11 @@
     { id: 'night',   name: 'Ночная',                price: 100, body: '#818cf8', head: '#a855f7' },
   ];
 
-  // Ключи, под которыми данные хранятся в localStorage браузера
-  const BEST_KEY = 'snakeBestScore';
-  const COINS_KEY = 'snakeCoins';
-  const OWNED_KEY = 'snakeOwnedSkins';   // список купленных скинов (JSON-массив id)
-  const SELECTED_KEY = 'snakeSelectedSkin'; // id выбранного скина
+  // Ключи берём из единого модуля хранения (storage.js) — один источник правды
+  const BEST_KEY = GameStorage.KEYS.best;
+  const COINS_KEY = GameStorage.KEYS.coins;
+  const OWNED_KEY = GameStorage.KEYS.owned;     // список купленных скинов (JSON-массив id)
+  const SELECTED_KEY = GameStorage.KEYS.selected; // id выбранного скина
 
   // Секретная «соль» для контрольной суммы монет. Не криптография —
   // просто чтобы случайная правка монет в консоли не прошла проверку.
@@ -481,16 +483,16 @@
   const startBtn = document.getElementById('startBtn');
 
   // Читаем рекорд из localStorage (если его нет — 0). Number() превращает строку в число.
-  let best = Number(localStorage.getItem(BEST_KEY)) || 0;
+  let best = Number(GameStorage.get(BEST_KEY)) || 0;
 
   // ---- Монеты с защитой от ручной подделки (логика — в ShopLogic) ----
   // Сохраняем монеты в формате "значение|контрольная_сумма"
   function saveCoins() {
-    localStorage.setItem(COINS_KEY, ShopLogic.encodeCoins(coins, COINS_SALT));
+    GameStorage.set(COINS_KEY, ShopLogic.encodeCoins(coins, COINS_SALT));
   }
   // Читаем и проверяем. Если формат сломан или сумма не сходится — вернётся 0.
   function loadCoins() {
-    return ShopLogic.decodeCoins(localStorage.getItem(COINS_KEY), COINS_SALT);
+    return ShopLogic.decodeCoins(GameStorage.get(COINS_KEY), COINS_SALT);
   }
 
   // Монеты — накопительный итог: сохраняются между играми и после перезагрузки.
@@ -498,16 +500,16 @@
 
   // Купленные скины (классический всегда бесплатный и уже куплен)
   let ownedSkins;
-  try { ownedSkins = JSON.parse(localStorage.getItem(OWNED_KEY)) || ['classic']; }
+  try { ownedSkins = JSON.parse(GameStorage.get(OWNED_KEY)) || ['classic']; }
   catch (e) { ownedSkins = ['classic']; }
   if (!ownedSkins.includes('classic')) ownedSkins.push('classic');
 
   // Выбранный скин (по умолчанию — классический)
-  let selectedSkin = localStorage.getItem(SELECTED_KEY) || 'classic';
+  let selectedSkin = GameStorage.get(SELECTED_KEY) || 'classic';
 
   // ===================== ЗВУК (Web Audio, генерируем в коде) =====================
-  const MUTED_KEY = 'snakeMuted';
-  let muted = localStorage.getItem(MUTED_KEY) === '1'; // выключен ли звук
+  const MUTED_KEY = GameStorage.KEYS.muted;
+  let muted = GameStorage.get(MUTED_KEY) === '1'; // выключен ли звук
   let audioCtx = null;
 
   // Готовим/возвращаем аудио-контекст. Если звук выключен — не создаём и не играем.
@@ -558,12 +560,12 @@
   }
 
   // ===================== ЦВЕТОВОЙ РЕЖИМ ДЛЯ ДАЛЬТОНИКОВ =====================
-  const CB_KEY = 'snakeColorblind';
-  let colorblind = localStorage.getItem(CB_KEY) === '1'; // по умолчанию выключен (обычный режим)
+  const CB_KEY = GameStorage.KEYS.colorblind;
+  let colorblind = GameStorage.get(CB_KEY) === '1'; // по умолчанию выключен (обычный режим)
 
   // ===================== ВИБРАЦИЯ (haptics для мобильных) =====================
-  const VIBRO_KEY = 'snakeVibro';
-  let vibroOn = localStorage.getItem(VIBRO_KEY) !== '0'; // по умолчанию включена
+  const VIBRO_KEY = GameStorage.KEYS.vibro;
+  let vibroOn = GameStorage.get(VIBRO_KEY) !== '0'; // по умолчанию включена
 
   // Безопасная вибрация: если выключена или устройство не поддерживает — тихо выходим.
   // pattern — число (мс) или массив [вибро, пауза, вибро, ...].
@@ -681,8 +683,16 @@
     // Сравниваем счёт с рекордом. Если побили — сохраняем новый рекорд в localStorage.
     if (score > best) {
       best = score;
-      localStorage.setItem(BEST_KEY, best); // запись переживёт перезагрузку страницы
+      GameStorage.set(BEST_KEY, best); // запись переживёт перезагрузку страницы
       bestEl.textContent = best;            // обновляем рекорд на экране
+    }
+
+    // Точка будущей онлайн-синхронизации (Supabase — Модуль 5).
+    // Есть интернет → пробуем отправить счёт онлайн (сейчас безопасная заглушка).
+    // Нет интернета/Supabase → просто играем на localStorage, без ошибок.
+    if (GameStorage.isOnline()) {
+      Promise.resolve(GameStorage.online.saveScoreOnline(score, { best: best }))
+        .catch(() => { /* онлайн недоступен — это нормально, ничего не ломаем */ });
     }
 
     overlay.classList.remove('hidden'); // показываем экран со счётом и кнопкой
@@ -916,8 +926,8 @@
 
   // Сохраняем купленные и выбранный скин в localStorage
   function saveSkins() {
-    localStorage.setItem(OWNED_KEY, JSON.stringify(ownedSkins));
-    localStorage.setItem(SELECTED_KEY, selectedSkin);
+    GameStorage.set(OWNED_KEY, JSON.stringify(ownedSkins));
+    GameStorage.set(SELECTED_KEY, selectedSkin);
   }
 
   // Рисуем карточки всех скинов
@@ -1015,7 +1025,7 @@
 
   function setMute(m) {
     muted = m;
-    localStorage.setItem(MUTED_KEY, m ? '1' : '0'); // сохраняем состояние
+    GameStorage.set(MUTED_KEY, m ? '1' : '0'); // сохраняем состояние
     updateMuteBtns();
     if (!muted) getAudio(); // включили звук по клику — сразу разблокируем контекст
   }
@@ -1032,7 +1042,7 @@
 
   function setVibro(on) {
     vibroOn = on;
-    localStorage.setItem(VIBRO_KEY, on ? '1' : '0'); // сохраняем состояние
+    GameStorage.set(VIBRO_KEY, on ? '1' : '0'); // сохраняем состояние
     updateVibroBtns();
     if (vibroOn) vibrate(20); // включили — коротко «дзинь» как подтверждение (на мобильном)
   }
@@ -1049,7 +1059,7 @@
 
   function setColorblind(on) {
     colorblind = on;
-    localStorage.setItem(CB_KEY, on ? '1' : '0'); // сохраняем режим
+    GameStorage.set(CB_KEY, on ? '1' : '0'); // сохраняем режим
     updateCbBtns();
     draw(); // мгновенная перерисовка без перезагрузки
   }
@@ -1081,7 +1091,7 @@
   resetBestBtn.addEventListener('click', () => {
     if (confirm('Сбросить рекорд? Это действие нельзя отменить.')) {
       best = 0;
-      localStorage.removeItem(BEST_KEY);
+      GameStorage.remove(BEST_KEY);
       bestEl.textContent = best;
     }
   });
