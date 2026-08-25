@@ -282,6 +282,43 @@
     .skin-card button:disabled { opacity: 0.45; cursor: not-allowed; }
 
     .coin-icon.small { width: 0.85em; height: 0.85em; }
+
+    /* ===== Экран настроек ===== */
+    .settings-panel { width: min(94vw, 360px); }
+    .settings-panel button { width: 100%; }        /* кнопки на всю ширину — аккуратно */
+    /* «Опасная» кнопка сброса рекорда */
+    button.danger {
+      color: #fca5a5;
+      background: transparent;
+      border: 1px solid #b91c1c;
+    }
+    button.danger:hover { background: rgba(185, 28, 28, 0.15); filter: none; }
+
+    /* ===== Баннер обновления PWA ===== */
+    .update-banner {
+      position: fixed;
+      left: 50%;
+      bottom: 16px;
+      transform: translateX(-50%);
+      z-index: 60;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      max-width: 92vw;
+      background: var(--grid);
+      color: var(--text);
+      border: 1px solid var(--accent);
+      border-radius: 12px;
+      padding: 10px 14px;
+      font-size: 0.9rem;
+      box-shadow: 0 6px 20px rgba(0,0,0,0.4);
+    }
+    .update-banner.hidden { display: none; }
+    .update-banner button {
+      font-size: 0.85rem;
+      padding: 8px 16px;
+      border-radius: 8px;
+    }
   </style>
 </head>
 <body>
@@ -300,9 +337,7 @@
       <div class="final-score">Собирай еду и расти. Не врежься в стены и в себя!</div>
       <button id="startBtn">Начать игру</button>
       <button id="shopBtnStart" class="btn-secondary">Магазин скинов</button>
-      <button class="btn-secondary mute-btn">Звук: вкл</button>
-      <button class="btn-secondary vibro-btn">Вибрация: вкл</button>
-      <button class="btn-secondary cb-btn">Цвет: обычный</button>
+      <button id="settingsBtnStart" class="btn-secondary">Настройки</button>
     </div>
 
     <!-- Экран проигрыша: показывается только после Game Over -->
@@ -312,6 +347,7 @@
       <button id="restart">Начать заново</button>
       <button id="share" class="btn-secondary">📤 Поделиться результатом</button>
       <button id="shopBtnOver" class="btn-secondary">Магазин скинов</button>
+      <button id="settingsBtnOver" class="btn-secondary">Настройки</button>
       <!-- Сообщение после копирования в буфер (для десктопа без шеринга) -->
       <div class="share-msg" id="shareMsg"></div>
     </div>
@@ -343,11 +379,26 @@
         Баланс: <span class="coin-icon" aria-hidden="true"></span> <span id="shopBalance">0</span>
       </div>
       <div class="shop-list" id="shopList"><!-- карточки скинов рисует JS --></div>
+      <button id="shopClose">Закрыть</button>
+    </div>
+  </div>
+
+  <!-- ===== Экран настроек (модальное окно поверх всего) ===== -->
+  <div class="shop-overlay hidden" id="settings">
+    <div class="shop-panel settings-panel">
+      <h2>Настройки</h2>
       <button class="btn-secondary mute-btn">Звук: вкл</button>
       <button class="btn-secondary vibro-btn">Вибрация: вкл</button>
       <button class="btn-secondary cb-btn">Цвет: обычный</button>
-      <button id="shopClose">Закрыть</button>
+      <button id="resetBest" class="btn-secondary danger">Сбросить рекорд</button>
+      <button id="settingsClose">Назад</button>
     </div>
+  </div>
+
+  <!-- Баннер обновления PWA: появляется, когда готова новая версия -->
+  <div class="update-banner hidden" id="updateBanner">
+    <span>Доступна новая версия игры</span>
+    <button id="updateBtn">Обновить</button>
   </div>
 
   <!-- Логика магазина/монет — общий модуль для игры и автотестов (npm test) -->
@@ -974,19 +1025,87 @@
   cbBtns.forEach((b) => b.addEventListener('click', () => setColorblind(!colorblind)));
   updateCbBtns();
 
+  // ===================== ЭКРАН НАСТРОЕК =====================
+  const settings = document.getElementById('settings');
+  const settingsBtnStart = document.getElementById('settingsBtnStart');
+  const settingsBtnOver = document.getElementById('settingsBtnOver');
+  const settingsClose = document.getElementById('settingsClose');
+  const resetBestBtn = document.getElementById('resetBest');
+
+  function openSettings() {
+    // Обновляем подписи переключателей на актуальные значения
+    updateMuteBtns();
+    updateVibroBtns();
+    updateCbBtns();
+    settings.classList.remove('hidden');
+  }
+  function closeSettings() { settings.classList.add('hidden'); }
+
+  settingsBtnStart.addEventListener('click', openSettings);
+  settingsBtnOver.addEventListener('click', openSettings);
+  settingsClose.addEventListener('click', closeSettings);
+
+  // Сброс рекорда — с подтверждением
+  resetBestBtn.addEventListener('click', () => {
+    if (confirm('Сбросить рекорд? Это действие нельзя отменить.')) {
+      best = 0;
+      localStorage.removeItem(BEST_KEY);
+      bestEl.textContent = best;
+    }
+  });
+
   // ===================== СТАРТ =====================
   // При загрузке только готовим поле и показываем стартовый экран.
   // Движение начнётся, когда игрок нажмёт «Начать игру».
   resetBoard();
 
-  // ===================== РЕГИСТРАЦИЯ SERVICE WORKER (PWA) =====================
-  // Включает офлайн-режим и делает игру устанавливаемой на телефон.
-  // Путь относительный — работает и на GitHub Pages в подпапке /snake-game/.
+  // ===================== РЕГИСТРАЦИЯ SERVICE WORKER + ОБНОВЛЕНИЯ =====================
+  // Офлайн-режим, установка на телефон и баннер «Доступна новая версия».
   if ('serviceWorker' in navigator) {
+    const updateBanner = document.getElementById('updateBanner');
+    const updateBtn = document.getElementById('updateBtn');
+    let waitingWorker = null;      // новый воркер, ждущий активации
+    let userTriggeredUpdate = false;
+
+    // Показать баннер, когда готова новая версия
+    function showUpdateBanner(worker) {
+      waitingWorker = worker;
+      updateBanner.classList.remove('hidden');
+    }
+
+    // Клик «Обновить» → просим новый воркер активироваться
+    updateBtn.addEventListener('click', () => {
+      updateBanner.classList.add('hidden');
+      if (waitingWorker) {
+        userTriggeredUpdate = true;
+        waitingWorker.postMessage('SKIP_WAITING');
+      }
+    });
+
+    // Когда новый воркер взял управление — перезагружаем (только по кнопке «Обновить»)
+    let refreshing = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (userTriggeredUpdate && !refreshing) {
+        refreshing = true;
+        location.reload();
+      }
+    });
+
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('service-worker.js')
-        .then(reg => console.log('Service worker зарегистрирован:', reg.scope))
-        .catch(err => console.warn('Service worker не зарегистрировался:', err));
+      navigator.serviceWorker.register('service-worker.js').then((reg) => {
+        // Уже есть готовая новая версия?
+        if (reg.waiting && navigator.serviceWorker.controller) showUpdateBanner(reg.waiting);
+        // Появилась новая версия во время работы
+        reg.addEventListener('updatefound', () => {
+          const nw = reg.installing;
+          if (!nw) return;
+          nw.addEventListener('statechange', () => {
+            if (nw.state === 'installed' && navigator.serviceWorker.controller) {
+              showUpdateBanner(nw); // есть контроллер → это именно обновление, а не первая установка
+            }
+          });
+        });
+      }).catch((err) => console.warn('Service worker не зарегистрировался:', err));
     });
   }
   </script>
