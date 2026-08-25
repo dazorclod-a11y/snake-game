@@ -439,6 +439,9 @@
   <script src="shop-logic.js"></script>
   <!-- Чистая логика движения змейки — общий модуль для игры и автотестов -->
   <script src="game-logic.js"></script>
+  <!-- Опциональный конфиг Supabase (из .env.local, в git не попадает).
+       На публичном сайте этого файла нет — тогда онлайн-функции просто выключены. -->
+  <script src="supabase-config.js" onerror="/* нет конфига — играем без онлайна */"></script>
   <script>
   // ===================== НАСТРОЙКИ ИГРЫ =====================
   const CELLS = 20;              // поле 20×20 клеток
@@ -1100,6 +1103,27 @@
   window.addEventListener('online', updateOnlineStatus);   // сеть появилась → убрать плашку
   window.addEventListener('offline', updateOnlineStatus);  // сеть пропала → показать плашку
   updateOnlineStatus(); // начальное состояние при загрузке
+
+  // ===================== ПОДКЛЮЧЕНИЕ SUPABASE (Модуль 5) =====================
+  // Безопасно и опционально: подключаемся ТОЛЬКО если есть конфиг (ключи) И интернет.
+  // Нет конфига (публичный сайт) или нет сети → онлайн-функции просто не включаются,
+  // игра продолжает полностью работать на localStorage.
+  (function initSupabase() {
+    const cfg = window.SUPABASE_CONFIG; // из supabase-config.js (генерируется из .env.local)
+    if (!cfg || !cfg.url || !cfg.anonKey) return; // ключей нет — тихо выходим, без ошибок
+    if (!GameStorage.isOnline()) return;          // офлайн — не пытаемся подключаться
+
+    // SDK Supabase грузим динамически и только при наличии сети. Если не загрузится — не страшно.
+    import('https://esm.sh/@supabase/supabase-js@2')
+      .then(function (mod) {
+        const client = mod.createClient(cfg.url, cfg.anonKey);
+        GameStorage.online.configure(client); // включаем онлайн-точку (enabled = true)
+        console.log('Supabase подключён — онлайн-функции доступны.');
+      })
+      .catch(function () {
+        // SDK недоступен (нет сети/CDN) — играем локально, никаких ошибок в игре
+      });
+  })();
 
   // ===================== СТАРТ =====================
   // При загрузке только готовим поле и показываем стартовый экран.
