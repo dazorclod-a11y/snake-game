@@ -294,6 +294,35 @@
     }
     button.danger:hover { background: rgba(185, 28, 28, 0.15); filter: none; }
 
+    /* ===== Индикатор офлайна ===== */
+    .offline-indicator {
+      position: fixed;
+      top: 10px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 60;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      max-width: 92vw;
+      background: #78350f;          /* приглушённый янтарный, не тревожный */
+      color: #fde68a;
+      border: 1px solid #b45309;
+      border-radius: 999px;
+      padding: 6px 14px;
+      font-size: 0.82rem;
+      box-shadow: 0 4px 14px rgba(0,0,0,0.35);
+    }
+    .offline-indicator.hidden { display: none; }
+    .offline-indicator::before { /* мигающая точка-статус */
+      content: '';
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: #fbbf24;
+      animation: offlinePulse 1.4s ease-in-out infinite;
+    }
+    @keyframes offlinePulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
+
     /* ===== Баннер обновления PWA ===== */
     .update-banner {
       position: fixed;
@@ -394,6 +423,9 @@
       <button id="settingsClose">Назад</button>
     </div>
   </div>
+
+  <!-- Индикатор офлайна: показывается, когда нет интернета -->
+  <div class="offline-indicator hidden" id="offlineIndicator">Офлайн-режим — играем без интернета</div>
 
   <!-- Баннер обновления PWA: появляется, когда готова новая версия -->
   <div class="update-banner hidden" id="updateBanner">
@@ -1053,6 +1085,18 @@
       bestEl.textContent = best;
     }
   });
+
+  // ===================== ИНДИКАТОР ОФЛАЙНА =====================
+  // Показываем маленькую плашку, когда нет интернета. Игру НЕ блокируем.
+  const offlineIndicator = document.getElementById('offlineIndicator');
+  function updateOnlineStatus() {
+    // navigator.onLine: false — сети нет, true — есть
+    if (navigator.onLine) offlineIndicator.classList.add('hidden');
+    else offlineIndicator.classList.remove('hidden');
+  }
+  window.addEventListener('online', updateOnlineStatus);   // сеть появилась → убрать плашку
+  window.addEventListener('offline', updateOnlineStatus);  // сеть пропала → показать плашку
+  updateOnlineStatus(); // начальное состояние при загрузке
 
   // ===================== СТАРТ =====================
   // При загрузке только готовим поле и показываем стартовый экран.
