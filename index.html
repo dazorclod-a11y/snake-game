@@ -297,6 +297,7 @@
       <div class="final-score">Собирай еду и расти. Не врежься в стены и в себя!</div>
       <button id="startBtn">Начать игру</button>
       <button id="shopBtnStart" class="btn-secondary">Магазин скинов</button>
+      <button class="btn-secondary mute-btn">Звук: вкл</button>
     </div>
 
     <!-- Экран проигрыша: показывается только после Game Over -->
@@ -337,10 +338,13 @@
         Баланс: <span class="coin-icon" aria-hidden="true"></span> <span id="shopBalance">0</span>
       </div>
       <div class="shop-list" id="shopList"><!-- карточки скинов рисует JS --></div>
+      <button class="btn-secondary mute-btn">Звук: вкл</button>
       <button id="shopClose">Закрыть</button>
     </div>
   </div>
 
+  <!-- Логика магазина/монет — общий модуль для игры и автотестов (npm test) -->
+  <script src="shop-logic.js"></script>
   <script>
   // ===================== НАСТРОЙКИ ИГРЫ =====================
   const CELLS = 20;              // поле 20×20 клеток
@@ -389,32 +393,14 @@
   // Читаем рекорд из localStorage (если его нет — 0). Number() превращает строку в число.
   let best = Number(localStorage.getItem(BEST_KEY)) || 0;
 
-  // ---- Монеты с защитой от ручной подделки ----
-  // Простой строковый хеш (djb2) от соли + значения. Не крипто, но случайную
-  // правку числа в localStorage без пересчёта хеша он ловит.
-  function coinsHash(n) {
-    const s = COINS_SALT + ':' + n;
-    let h = 5381;
-    for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) >>> 0;
-    return h.toString(36);
-  }
+  // ---- Монеты с защитой от ручной подделки (логика — в ShopLogic) ----
   // Сохраняем монеты в формате "значение|контрольная_сумма"
   function saveCoins() {
-    localStorage.setItem(COINS_KEY, coins + '|' + coinsHash(coins));
+    localStorage.setItem(COINS_KEY, ShopLogic.encodeCoins(coins, COINS_SALT));
   }
-  // Читаем и проверяем. Если формат сломан или сумма не сходится — сброс к 0.
+  // Читаем и проверяем. Если формат сломан или сумма не сходится — вернётся 0.
   function loadCoins() {
-    const raw = localStorage.getItem(COINS_KEY);
-    if (!raw) return 0; // данных ещё нет — начинаем с 0
-    const sep = raw.indexOf('|');
-    const val = Number(raw.slice(0, sep));
-    const hash = raw.slice(sep + 1);
-    if (sep === -1 || !Number.isInteger(val) || val < 0 || hash !== coinsHash(val)) {
-      // Данные изменены вручную или повреждены → сбрасываем баланс
-      localStorage.setItem(COINS_KEY, '0|' + coinsHash(0));
-      return 0;
-    }
-    return val;
+    return ShopLogic.decodeCoins(localStorage.getItem(COINS_KEY), COINS_SALT);
   }
 
   // Монеты — накопительный итог: сохраняются между играми и после перезагрузки.
@@ -428,6 +414,58 @@
 
   // Выбранный скин (по умолчанию — классический)
   let selectedSkin = localStorage.getItem(SELECTED_KEY) || 'classic';
+
+  // ===================== ЗВУК (Web Audio, генерируем в коде) =====================
+  const MUTED_KEY = 'snakeMuted';
+  let muted = localStorage.getItem(MUTED_KEY) === '1'; // выключен ли звук
+  let audioCtx = null;
+
+  // Готовим/возвращаем аудио-контекст. Если звук выключен — не создаём и не играем.
+  function getAudio() {
+    if (muted) return null;
+    if (!audioCtx) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return null;               // браузер без Web Audio — просто без звука
+      try { audioCtx = new AC(); } catch (e) { return null; }
+    }
+    if (audioCtx.state === 'suspended') audioCtx.resume(); // разблокировка после клика
+    return audioCtx;
+  }
+
+  // Один тон: частота (Гц), длительность (мс), форма волны, громкость, задержка старта (с)
+  function tone(freq, durationMs, type, volume, startDelay) {
+    const ctx = getAudio();
+    if (!ctx) return; // звук выключен или не поддерживается — тихо выходим
+    const t0 = ctx.currentTime + (startDelay || 0);
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = type || 'sine';
+    osc.frequency.setValueAtTime(freq, t0);
+    gain.gain.setValueAtTime(0.0001, t0);
+    gain.gain.linearRampToValueAtTime(volume, t0 + 0.01);       // быстрый нарастание
+    gain.gain.exponentialRampToValueAtTime(0.0001, t0 + durationMs / 1000); // затухание
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(t0);
+    osc.stop(t0 + durationMs / 1000 + 0.03);
+  }
+
+  // Звук поедания еды — короткий приятный восходящий «блип»
+  function playEat() {
+    tone(660, 90, 'sine', 0.18, 0);
+    tone(880, 90, 'sine', 0.14, 0.05);
+  }
+  // Звук Game Over — низкая драматичная нисходящая последовательность
+  function playGameOver() {
+    tone(300, 220, 'sawtooth', 0.2, 0);
+    tone(220, 260, 'sawtooth', 0.2, 0.18);
+    tone(150, 420, 'sawtooth', 0.2, 0.4);
+  }
+  // Звук покупки — яркий «ча-динг» (звон монет)
+  function playPurchase() {
+    tone(880, 120, 'triangle', 0.2, 0);
+    tone(1320, 220, 'triangle', 0.2, 0.1);
+  }
 
   // ===================== СОСТОЯНИЕ ИГРЫ =====================
   let snake;        // массив сегментов змейки, [0] — голова. Каждый сегмент = {x, y}
@@ -466,6 +504,7 @@
   // Прячет стартовый экран и включает игровой цикл.
   function startGame() {
     startOverlay.classList.add('hidden'); // убираем экран со стартовой кнопкой
+    getAudio();                           // разблокируем звук в рамках клика
     clearInterval(timer);
     timer = setInterval(step, SPEED);
   }
@@ -515,6 +554,7 @@
       coinsEl.textContent = coins;
       saveCoins();
 
+      playEat();                   // звук поедания
       placeFood();                 // новая еда (змейка выросла — хвост НЕ убираем)
     } else {
       snake.pop();                 // не ели — убираем хвост (длина не меняется)
@@ -527,6 +567,7 @@
   function endGame() {
     gameOver = true;
     clearInterval(timer);
+    playGameOver();                // драматичный звук проигрыша
     finalScoreEl.textContent = score;
 
     // Сравниваем счёт с рекордом. Если побили — сохраняем новый рекорд в localStorage.
@@ -563,7 +604,7 @@
     drawCircle(food.x, food.y, getCss('--food'));
 
     // Рисуем змейку в цветах выбранного скина (голова ярче тела)
-    const skin = SKINS.find(s => s.id === selectedSkin) || SKINS[0];
+    const skin = ShopLogic.activeSkin(SKINS, selectedSkin);
     snake.forEach((seg, index) => {
       let color;
       if (skin.body === 'rainbow') {
@@ -795,22 +836,31 @@
     });
   }
 
-  // Выбрать уже купленный скин
+  // Текущее состояние игрока для ShopLogic
+  function playerState() {
+    return { coins: coins, owned: ownedSkins, selected: selectedSkin };
+  }
+
+  // Выбрать уже купленный скин (правило — в ShopLogic.select)
   function selectSkin(id) {
-    selectedSkin = id;
+    const res = ShopLogic.select(playerState(), id);
+    if (!res.ok) return;
+    selectedSkin = res.state.selected;
     saveSkins();
     renderShop();
     draw(); // сразу перекрашиваем змейку на поле
   }
 
-  // Купить скин (если хватает монет)
+  // Купить скин (правило — в ShopLogic.buy)
   function buySkin(skin) {
-    if (coins < skin.price || ownedSkins.includes(skin.id)) return;
-    coins -= skin.price;
-    saveCoins();                      // сохраняем с контрольной суммой
-    coinsEl.textContent = coins;      // обновляем баланс на главном экране
-    ownedSkins.push(skin.id);
-    selectedSkin = skin.id;           // купил — сразу применяем
+    const res = ShopLogic.buy(playerState(), skin);
+    if (!res.ok) return;              // не хватает монет или уже куплен
+    playPurchase();                   // звон монет
+    coins = res.state.coins;
+    ownedSkins = res.state.owned;
+    selectedSkin = res.state.selected; // купил — сразу применяем
+    saveCoins();                       // сохраняем баланс с контрольной суммой
+    coinsEl.textContent = coins;       // обновляем баланс на главном экране
     saveSkins();
     renderShop();
     draw();
@@ -822,6 +872,24 @@
   shopBtnStart.addEventListener('click', openShop);
   shopBtnOver.addEventListener('click', openShop);
   shopClose.addEventListener('click', closeShop);
+
+  // ===================== ПЕРЕКЛЮЧАТЕЛЬ ЗВУКА (MUTE) =====================
+  const muteBtns = document.querySelectorAll('.mute-btn');
+
+  // Обновляем подпись на всех кнопках mute
+  function updateMuteBtns() {
+    muteBtns.forEach((b) => { b.textContent = muted ? 'Звук: выкл' : 'Звук: вкл'; });
+  }
+
+  function setMute(m) {
+    muted = m;
+    localStorage.setItem(MUTED_KEY, m ? '1' : '0'); // сохраняем состояние
+    updateMuteBtns();
+    if (!muted) getAudio(); // включили звук по клику — сразу разблокируем контекст
+  }
+
+  muteBtns.forEach((b) => b.addEventListener('click', () => setMute(!muted)));
+  updateMuteBtns(); // показать актуальное состояние при загрузке
 
   // ===================== СТАРТ =====================
   // При загрузке только готовим поле и показываем стартовый экран.
