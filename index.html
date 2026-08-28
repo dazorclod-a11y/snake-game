@@ -286,6 +286,18 @@
     /* ===== Экран настроек ===== */
     .settings-panel { width: min(94vw, 360px); }
     .settings-panel button { width: 100%; }        /* кнопки на всю ширину — аккуратно */
+    /* Поле ввода имени */
+    #nameInput, #loginNameInput, #emailInput, #otpInput {
+      width: 100%;
+      font-size: 1.1rem;
+      padding: 12px 14px;
+      border-radius: 8px;
+      border: 1px solid var(--grid);
+      background: var(--bg);
+      color: var(--text);
+      text-align: center;
+    }
+    #nameInput:focus, #loginNameInput:focus, #emailInput:focus, #otpInput:focus { outline: none; border-color: var(--accent); }
     /* «Опасная» кнопка сброса рекорда */
     button.danger {
       color: #fca5a5;
@@ -293,6 +305,73 @@
       border: 1px solid #b91c1c;
     }
     button.danger:hover { background: rgba(185, 28, 28, 0.15); filter: none; }
+
+    /* ===== Топ игроков ===== */
+    .top-list {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      max-height: 55vh;
+      overflow-y: auto;
+      text-align: left;
+    }
+    .top-row {
+      display: grid;
+      grid-template-columns: 2.2em 1fr auto;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 12px;
+      background: var(--bg);
+      border: 1px solid var(--grid);
+      border-radius: 8px;
+    }
+    .top-row .top-rank { color: var(--accent); font-weight: 700; text-align: center; }
+    .top-row .top-name {
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap; /* длинный ник не ломает верстку */
+    }
+    .top-row .top-score { font-weight: 600; }
+    /* Первые три места — чуть ярче */
+    .top-row.top-1 { border-color: #fbbf24; }
+    .top-row.top-2 { border-color: #cbd5e1; }
+    .top-row.top-3 { border-color: #d97706; }
+    .top-msg { padding: 16px 8px; opacity: 0.85; text-align: center; }
+
+    /* Индикатор синхронизации (вверху слева) */
+    .sync-status {
+      position: fixed;
+      top: 10px;
+      left: 10px;
+      z-index: 55;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.75rem;
+      border-radius: 999px;
+      padding: 5px 10px;
+      background: var(--field);
+      border: 1px solid var(--grid);
+      color: var(--text);
+    }
+    .sync-status.hidden { display: none; }
+    .sync-status::before {
+      content: '';
+      width: 7px; height: 7px; border-radius: 50%;
+      background: #94a3b8;
+    }
+    .sync-status.synced { border-color: #22c55e; }
+    .sync-status.synced::before { background: #22c55e; }        /* зелёный — синхронизировано */
+    .sync-status.syncing::before { background: #fbbf24; animation: offlinePulse 1s ease-in-out infinite; }
+    .sync-status.pending { border-color: #b45309; color: #fde68a; }
+    .sync-status.pending::before { background: #fbbf24; }        /* янтарный — ждёт интернета */
+
+    /* Ссылка «Политика конфиденциальности» */
+    .privacy-link {
+      color: var(--accent);
+      font-size: 0.85rem;
+      text-decoration: underline;
+      cursor: pointer;
+      margin-top: 2px;
+    }
 
     /* ===== Индикатор офлайна ===== */
     .offline-indicator {
@@ -365,7 +444,9 @@
       <h2>🐍 Змейка</h2>
       <div class="final-score">Собирай еду и расти. Не врежься в стены и в себя!</div>
       <button id="startBtn">Начать игру</button>
+      <button id="loginMenuBtn" class="btn-secondary">Войти</button>
       <button id="shopBtnStart" class="btn-secondary">Магазин скинов</button>
+      <button id="topBtnStart" class="btn-secondary">Топ игроков</button>
       <button id="settingsBtnStart" class="btn-secondary">Настройки</button>
     </div>
 
@@ -376,9 +457,12 @@
       <button id="restart">Начать заново</button>
       <button id="share" class="btn-secondary">📤 Поделиться результатом</button>
       <button id="shopBtnOver" class="btn-secondary">Магазин скинов</button>
+      <button id="topBtnOver" class="btn-secondary">Топ игроков</button>
       <button id="settingsBtnOver" class="btn-secondary">Настройки</button>
       <!-- Сообщение после копирования в буфер (для десктопа без шеринга) -->
       <div class="share-msg" id="shareMsg"></div>
+      <!-- Сообщение об отправке рекорда в общий топ -->
+      <div class="share-msg" id="leaderboardMsg"></div>
     </div>
   </div>
 
@@ -419,13 +503,125 @@
       <button class="btn-secondary mute-btn">Звук: вкл</button>
       <button class="btn-secondary vibro-btn">Вибрация: вкл</button>
       <button class="btn-secondary cb-btn">Цвет: обычный</button>
+      <button id="loginBtn" class="btn-secondary">Войти в аккаунт</button>
+      <div class="share-msg" id="loginMsg"></div>
       <button id="resetBest" class="btn-secondary danger">Сбросить рекорд</button>
       <button id="settingsClose">Назад</button>
     </div>
   </div>
 
+  <!-- Экран «Топ игроков» -->
+  <div class="shop-overlay hidden" id="topModal">
+    <div class="shop-panel">
+      <h2>Топ игроков</h2>
+      <div id="topList" class="top-list"></div>
+      <button id="topRetry" class="btn-secondary hidden">Повторить</button>
+      <button id="topClose">Назад</button>
+    </div>
+  </div>
+
+  <!-- Экран согласия на обработку ПДн (перед первой отправкой рекорда ИЛИ первым входом) -->
+  <div class="shop-overlay hidden" id="consentModal">
+    <div class="shop-panel settings-panel">
+      <h2>Согласие на обработку данных</h2>
+      <div class="final-score" style="line-height:1.5">
+        Для таблицы рекордов и входа в аккаунт мы сохраняем на сервере Supabase ваш никнейм и счёт,
+        а также выбранные скины и игровой прогресс. Данные обрабатываются за рубежом.
+        Продолжая, вы соглашаетесь с этим.
+      </div>
+      <button id="consentAccept">Принять и продолжить</button>
+      <button id="consentDecline" class="btn-secondary">Играть без аккаунта</button>
+      <a href="#" id="privacyLink" class="privacy-link">Политика конфиденциальности</a>
+    </div>
+  </div>
+
+  <!-- Заглушка политики конфиденциальности (полный текст — Модуль 6.6) -->
+  <div class="shop-overlay hidden" id="privacyModal">
+    <div class="shop-panel settings-panel">
+      <h2>Политика конфиденциальности</h2>
+      <div class="final-score" style="line-height:1.5; text-align:left">
+        Это заглушка — полный текст появится в Модуле 6.6.<br><br>
+        Коротко: если вы соглашаетесь, мы храним на сервере Supabase (за рубежом) ваш никнейм, счёт,
+        выбранные скины и игровой прогресс — только чтобы работали общий топ и вход в аккаунт.
+        Играя без аккаунта, вы ничего не отправляете: всё остаётся на вашем устройстве.
+      </div>
+      <button id="privacyClose">Назад</button>
+    </div>
+  </div>
+
+  <!-- Ввод имени игрока -->
+  <div class="shop-overlay hidden" id="nameModal">
+    <div class="shop-panel settings-panel">
+      <h2>Ваш никнейм</h2>
+      <div class="final-score">Под этим именем ваш рекорд появится в общем топе.</div>
+      <input id="nameInput" type="text" maxlength="24" placeholder="Никнейм" autocomplete="off">
+      <button id="nameSubmit">Отправить рекорд</button>
+      <button id="nameCancel" class="btn-secondary">Отмена</button>
+    </div>
+  </div>
+
+  <!-- Ввод ника для входа в аккаунт -->
+  <div class="shop-overlay hidden" id="loginNameModal">
+    <div class="shop-panel settings-panel">
+      <h2>Придумайте ник</h2>
+      <div class="final-score">3–20 символов: латинские буквы и цифры, без пробелов.</div>
+      <input id="loginNameInput" type="text" maxlength="20" placeholder="Ник" autocomplete="off">
+      <div class="share-msg" id="loginNameErr"></div>
+      <button id="loginNameSubmit">Войти</button>
+      <button id="emailLoginBtn" class="btn-secondary">Войти по email</button>
+      <button id="restoreBtn" class="btn-secondary">Уже есть аккаунт</button>
+      <button id="loginNameCancel" class="btn-secondary">Отмена</button>
+      <div class="final-score" style="font-size:0.78rem; opacity:0.7; line-height:1.4">
+        Без email прогресс привязан к этому браузеру и не переносится на другие устройства.
+        Чтобы переносить — войди по email.
+      </div>
+    </div>
+  </div>
+
+  <!-- Ввод email для входа -->
+  <div class="shop-overlay hidden" id="emailModal">
+    <div class="shop-panel settings-panel">
+      <h2>Вход по email</h2>
+      <div class="final-score" style="line-height:1.5">
+        ⚠️ Письма от Supabase могут не дойти до mail.ru/yandex.ru.
+        Проверь спам или используй Gmail/ProtonMail.
+      </div>
+      <input id="emailInput" type="email" maxlength="120" placeholder="you@gmail.com" autocomplete="email">
+      <div class="share-msg" id="emailErr"></div>
+      <button id="emailSendBtn">Отправить код</button>
+      <button id="emailToNickBtn" class="btn-secondary">Использовать вход по нику</button>
+      <button id="emailCancelBtn" class="btn-secondary">Отмена</button>
+    </div>
+  </div>
+
+  <!-- Ввод кода из письма -->
+  <div class="shop-overlay hidden" id="otpModal">
+    <div class="shop-panel settings-panel">
+      <h2>Код из письма</h2>
+      <div class="final-score" id="otpHint">Введите код, который пришёл на почту.</div>
+      <input id="otpInput" type="text" inputmode="numeric" maxlength="10" placeholder="Код" autocomplete="one-time-code">
+      <div class="share-msg" id="otpErr"></div>
+      <button id="otpVerifyBtn">Подтвердить</button>
+      <button id="otpToNickBtn" class="btn-secondary">Письмо не пришло — вход по нику</button>
+      <button id="otpCancelBtn" class="btn-secondary">Отмена</button>
+    </div>
+  </div>
+
   <!-- Индикатор офлайна: показывается, когда нет интернета -->
   <div class="offline-indicator hidden" id="offlineIndicator">Офлайн-режим — играем без интернета</div>
+
+  <!-- Индикатор синхронизации (виден, когда игрок вошёл) -->
+  <div class="sync-status hidden" id="syncStatus">Синхронизировано</div>
+
+  <!-- Диалог конфликта локальных и облачных данных -->
+  <div class="shop-overlay hidden" id="conflictModal">
+    <div class="shop-panel settings-panel">
+      <h2>Какой прогресс оставить?</h2>
+      <div class="final-score" id="conflictText" style="text-align:left; line-height:1.6"></div>
+      <button id="conflictCloud">Оставить облачные</button>
+      <button id="conflictLocal" class="btn-secondary">Оставить локальные</button>
+    </div>
+  </div>
 
   <!-- Баннер обновления PWA: появляется, когда готова новая версия -->
   <div class="update-banner hidden" id="updateBanner">
@@ -472,6 +668,8 @@
   const COINS_KEY = GameStorage.KEYS.coins;
   const OWNED_KEY = GameStorage.KEYS.owned;     // список купленных скинов (JSON-массив id)
   const SELECTED_KEY = GameStorage.KEYS.selected; // id выбранного скина
+  const CONSENT_KEY = GameStorage.KEYS.consent;   // согласие на отправку в общий топ
+  const NAME_KEY = GameStorage.KEYS.playerName;   // имя игрока
 
   // Секретная «соль» для контрольной суммы монет. Не криптография —
   // просто чтобы случайная правка монет в консоли не прошла проверку.
@@ -660,6 +858,7 @@
       coins += COINS_PER_FOOD;
       coinsEl.textContent = coins;
       saveCoins();
+      scheduleSync();              // синхронизируем монеты с облаком (дебаунс)
 
       playEat();                   // звук поедания
       vibrate(30);                 // короткая вибрация
@@ -676,23 +875,25 @@
     playGameOver();                // драматичный звук проигрыша
     vibrate([120, 50, 180]);       // более длинная вибрация проигрыша
     finalScoreEl.textContent = score;
+    leaderboardMsg.classList.remove('show'); // сбрасываем прошлое сообщение
+
+    // Достоин ли результат общего топа: не ниже локального рекорда и не ноль.
+    // Считаем ДО обновления best, чтобы «повтор рекорда» тоже отправлялся.
+    const qualifiesForTop = score >= best && score > 0;
 
     // Сравниваем счёт с рекордом. Если побили — сохраняем новый рекорд в localStorage.
     if (score > best) {
       best = score;
       GameStorage.set(BEST_KEY, best); // запись переживёт перезагрузку страницы
       bestEl.textContent = best;            // обновляем рекорд на экране
-    }
-
-    // Точка будущей онлайн-синхронизации (Supabase — Модуль 5).
-    // Есть интернет → пробуем отправить счёт онлайн (сейчас безопасная заглушка).
-    // Нет интернета/Supabase → просто играем на localStorage, без ошибок.
-    if (GameStorage.isOnline()) {
-      Promise.resolve(GameStorage.online.saveScoreOnline(score, { best: best }))
-        .catch(() => { /* онлайн недоступен — это нормально, ничего не ломаем */ });
+      scheduleSync();                       // новый рекорд → в облако
     }
 
     overlay.classList.remove('hidden'); // показываем экран со счётом и кнопкой
+
+    // Отправка в общий топ (Supabase): только если результат достоин.
+    // Внутри — проверки интернета, согласия и имени; офлайн/без согласия ничего не шлём.
+    if (qualifiesForTop) maybeSubmitScore(score);
   }
 
   // ===================== ОТРИСОВКА =====================
@@ -984,6 +1185,7 @@
     if (!res.ok) return;
     selectedSkin = res.state.selected;
     saveSkins();
+    scheduleSync();      // выбранный скин → в облако
     renderShop();
     draw(); // сразу перекрашиваем змейку на поле
   }
@@ -1000,6 +1202,7 @@
     saveCoins();                       // сохраняем баланс с контрольной суммой
     coinsEl.textContent = coins;       // обновляем баланс на главном экране
     saveSkins();
+    scheduleSync();                    // покупка (монеты + скины) → в облако
     renderShop();
     draw();
   }
@@ -1110,20 +1313,522 @@
   // игра продолжает полностью работать на localStorage.
   (function initSupabase() {
     const cfg = window.SUPABASE_CONFIG; // из supabase-config.js (генерируется из .env.local)
-    if (!cfg || !cfg.url || !cfg.anonKey) return; // ключей нет — тихо выходим, без ошибок
-    if (!GameStorage.isOnline()) return;          // офлайн — не пытаемся подключаться
-
-    // SDK Supabase грузим динамически и только при наличии сети. Если не загрузится — не страшно.
-    import('https://esm.sh/@supabase/supabase-js@2')
-      .then(function (mod) {
-        const client = mod.createClient(cfg.url, cfg.anonKey);
-        GameStorage.online.configure(client); // включаем онлайн-точку (enabled = true)
-        console.log('Supabase подключён — онлайн-функции доступны.');
-      })
-      .catch(function () {
-        // SDK недоступен (нет сети/CDN) — играем локально, никаких ошибок в игре
-      });
+    if (!cfg || !cfg.url || !cfg.anonKey) return; // ключей нет (публичный сайт) — онлайн выключен
+    // Подключаем онлайн-точку через REST API (fetch). Сеть проверяется на каждом вызове,
+    // поэтому офлайн ничего не сломает.
+    GameStorage.online.configure(cfg);
   })();
+
+  // ===================== ОТПРАВКА РЕКОРДА В ОБЩИЙ ТОП =====================
+  const consentModal = document.getElementById('consentModal');
+  const consentAccept = document.getElementById('consentAccept');
+  const consentDecline = document.getElementById('consentDecline');
+  const nameModal = document.getElementById('nameModal');
+  const nameInput = document.getElementById('nameInput');
+  const nameSubmit = document.getElementById('nameSubmit');
+  const nameCancel = document.getElementById('nameCancel');
+  const leaderboardMsg = document.getElementById('leaderboardMsg');
+
+  let pendingScore = null;   // счёт, ожидающий отправки через согласие/имя
+  let consentAction = null;  // что сделать ПОСЛЕ согласия (отправить рекорд / войти)
+
+  function showLeaderboardMsg(text) {
+    leaderboardMsg.textContent = text;
+    leaderboardMsg.classList.add('show');
+  }
+
+  // Переиспользуемые «ворота согласия»: согласие есть → сразу действие;
+  // иначе показываем экран согласия и запоминаем, что сделать после «Принять».
+  function requestConsent(action) {
+    if (GameStorage.get(CONSENT_KEY) === 'granted') { action(); return; }
+    consentAction = action;
+    consentModal.classList.remove('hidden');
+  }
+
+  // Отправка рекорда: при отказе — молча не шлём; иначе через ворота согласия.
+  function maybeSubmitScore(score) {
+    if (!GameStorage.isOnline() || !GameStorage.online.enabled) return; // офлайн/нет Supabase — тихо
+    if (GameStorage.get(CONSENT_KEY) === 'declined') return;            // отказ — не спрашиваем и не шлём
+    pendingScore = score;
+    requestConsent(ensureNameThenSend);
+  }
+
+  // «Принять и продолжить» — сохраняем согласие и выполняем отложенное действие
+  consentAccept.addEventListener('click', function () {
+    GameStorage.set(CONSENT_KEY, 'granted');
+    consentModal.classList.add('hidden');
+    const action = consentAction; consentAction = null;
+    if (action) action();
+  });
+  // «Играть без аккаунта» — запоминаем отказ, закрываем, продолжаем локально
+  consentDecline.addEventListener('click', function () {
+    GameStorage.set(CONSENT_KEY, 'declined');
+    consentModal.classList.add('hidden');
+    consentAction = null;
+    pendingScore = null;
+  });
+
+  // Ссылка «Политика конфиденциальности» (заглушка; полный текст — Модуль 6.6)
+  const privacyLink = document.getElementById('privacyLink');
+  const privacyModal = document.getElementById('privacyModal');
+  const privacyClose = document.getElementById('privacyClose');
+  privacyLink.addEventListener('click', function (e) { e.preventDefault(); privacyModal.classList.remove('hidden'); });
+  privacyClose.addEventListener('click', function () { privacyModal.classList.add('hidden'); });
+
+  // ===================== ВХОД ПО НИКУ (анонимный аккаунт Supabase) =====================
+  const AUTH_KEY = GameStorage.KEYS.auth;
+  const loginBtn = document.getElementById('loginBtn');            // кнопка в настройках
+  const loginMsg = document.getElementById('loginMsg');
+  const loginMenuBtn = document.getElementById('loginMenuBtn');    // кнопка в главном меню
+  const loginNameModal = document.getElementById('loginNameModal');
+  const loginNameInput = document.getElementById('loginNameInput');
+  const loginNameErr = document.getElementById('loginNameErr');
+  const loginNameSubmit = document.getElementById('loginNameSubmit');
+  const loginNameCancel = document.getElementById('loginNameCancel');
+
+  let authSession = null; // {userId, accessToken, refreshToken, nickname} — когда вошли
+
+  // Авто-вход: восстанавливаем сессию из localStorage (тот же браузер = уже авторизован)
+  (function restoreSession() {
+    const raw = GameStorage.get(AUTH_KEY);
+    if (!raw) return;
+    try { const s = JSON.parse(raw); if (s && s.userId) authSession = s; } catch (e) {}
+  })();
+
+  // Текущий локальный прогресс для привязки к аккаунту
+  function collectLocalProfile(nick) {
+    return { nickname: nick, coins: coins, owned_skins: ownedSkins, selected_skin: selectedSkin, best_score: best };
+  }
+
+  // Вид кнопок «Войти» (меню + настройки) с учётом входа и сети
+  function updateLoginUi() {
+    const online = GameStorage.isOnline() && GameStorage.online.enabled;
+    if (authSession && authSession.nickname) {
+      const label = 'Вы: ' + authSession.nickname;
+      loginMenuBtn.textContent = label; loginBtn.textContent = label;
+      loginMenuBtn.disabled = false; loginBtn.disabled = false;
+    } else if (!online) {
+      loginMenuBtn.textContent = 'Нет соединения'; loginBtn.textContent = 'Нет соединения';
+      loginMenuBtn.disabled = true; loginBtn.disabled = true; // без сети войти нельзя
+    } else {
+      loginMenuBtn.textContent = 'Войти'; loginBtn.textContent = 'Войти в аккаунт';
+      loginMenuBtn.disabled = false; loginBtn.disabled = false;
+    }
+  }
+
+  // Начать вход: (уже вошёл?) → сеть → согласие → ввод ника
+  function startLogin() {
+    if (authSession) {
+      loginMsg.textContent = 'Вы уже вошли как ' + authSession.nickname + '.';
+      loginMsg.classList.add('show');
+      return;
+    }
+    if (!GameStorage.isOnline() || !GameStorage.online.enabled) { updateLoginUi(); return; }
+    requestConsent(promptNickname); // сначала согласие (если ещё не дано) — потом ник
+  }
+  function promptNickname() {
+    loginNameErr.classList.remove('show');
+    loginNameInput.value = '';
+    loginNameModal.classList.remove('hidden');
+    setTimeout(function () { loginNameInput.focus(); }, 50);
+  }
+
+  const NICK_RE = /^[A-Za-z0-9]{3,20}$/; // 3–20, латиница+цифры, без пробелов
+  async function doAnonLogin() {
+    const nick = loginNameInput.value.trim();
+    if (!NICK_RE.test(nick)) {
+      loginNameErr.textContent = 'Ник: 3–20 латинских букв/цифр, без пробелов.';
+      loginNameErr.classList.add('show');
+      return;
+    }
+    loginNameSubmit.disabled = true;
+    const res = await GameStorage.online.signInAnonymously();
+    loginNameSubmit.disabled = false;
+    if (!res.ok) {
+      loginNameErr.textContent = /disabled/i.test(res.reason || '')
+        ? 'Анонимный вход выключен в Supabase.' : 'Не удалось войти. Попробуйте позже.';
+      loginNameErr.classList.add('show');
+      return;
+    }
+    authSession = {
+      userId: res.session.userId, accessToken: res.session.accessToken,
+      refreshToken: res.session.refreshToken, nickname: nick,
+    };
+    GameStorage.set(AUTH_KEY, JSON.stringify(authSession)); // авто-вход в этом браузере
+    // Привязываем текущий прогресс (монеты, скины, выбранный скин, рекорд) к аккаунту
+    await GameStorage.online.saveProfile(authSession, collectLocalProfile(nick));
+    loginNameModal.classList.add('hidden');
+    updateLoginUi();
+    setSyncStatus('synced'); // прогресс только что отправлен в облако
+    loginMsg.textContent = 'Вы вошли как ' + nick + '.';
+    loginMsg.classList.add('show');
+  }
+  loginNameSubmit.addEventListener('click', doAnonLogin);
+  loginNameInput.addEventListener('keydown', function (e) { if (e.key === 'Enter') doAnonLogin(); });
+  loginNameCancel.addEventListener('click', function () { loginNameModal.classList.add('hidden'); });
+
+  // ===================== ВХОД ПО EMAIL (опционально) =====================
+  const emailLoginBtn = document.getElementById('emailLoginBtn');
+  const emailModal = document.getElementById('emailModal');
+  const emailInput = document.getElementById('emailInput');
+  const emailErr = document.getElementById('emailErr');
+  const emailSendBtn = document.getElementById('emailSendBtn');
+  const emailToNickBtn = document.getElementById('emailToNickBtn');
+  const emailCancelBtn = document.getElementById('emailCancelBtn');
+  const otpModal = document.getElementById('otpModal');
+  const otpInput = document.getElementById('otpInput');
+  const otpErr = document.getElementById('otpErr');
+  const otpHint = document.getElementById('otpHint');
+  const otpVerifyBtn = document.getElementById('otpVerifyBtn');
+  const otpToNickBtn = document.getElementById('otpToNickBtn');
+  const otpCancelBtn = document.getElementById('otpCancelBtn');
+
+  const restoreBtn = document.getElementById('restoreBtn');
+  let emailFlow = { email: '', linking: false };
+  let emailMode = 'link'; // 'link' — привязать email к текущему аккаунту; 'restore' — вход в существующий + загрузка облака
+  const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+  function openEmailModal(mode) {
+    emailMode = mode;
+    loginNameModal.classList.add('hidden');
+    emailErr.classList.remove('show'); emailInput.value = '';
+    document.querySelector('#emailModal h2').textContent = (mode === 'restore') ? 'Вход в аккаунт по email' : 'Вход по email';
+    emailModal.classList.remove('hidden');
+    setTimeout(function () { emailInput.focus(); }, 50);
+  }
+  emailLoginBtn.addEventListener('click', function () { openEmailModal('link'); });
+  restoreBtn.addEventListener('click', function () { openEmailModal('restore'); }); // «Уже есть аккаунт»
+
+  async function sendEmailCode() {
+    const email = emailInput.value.trim();
+    if (!EMAIL_RE.test(email)) { emailErr.textContent = 'Введите корректный email.'; emailErr.classList.add('show'); return; }
+    emailSendBtn.disabled = true;
+    // Привязка → передаём текущую анон-сессию; восстановление → входим в существующий аккаунт (без привязки)
+    const sess = (emailMode === 'link') ? authSession : null;
+    const res = await GameStorage.online.requestEmailCode(email, sess);
+    emailSendBtn.disabled = false;
+    if (!res.ok) {
+      var r = res.reason || '';
+      if (r === 'invalid_email') emailErr.textContent = 'Введите корректный email.';
+      else if (/rate limit/i.test(r)) emailErr.textContent = 'Слишком много писем за короткое время (лимит Supabase). Подождите ~1 час или войдите по нику.';
+      else emailErr.textContent = 'Не удалось отправить письмо: ' + r + '. Можно войти по нику.';
+      emailErr.classList.add('show');
+      return;
+    }
+    emailFlow = { email: email, linking: !!res.linking };
+    emailModal.classList.add('hidden');
+    otpErr.classList.remove('show'); otpInput.value = '';
+    otpHint.textContent = 'Код отправлен на ' + email + '. Введите его из письма (проверьте спам).';
+    otpModal.classList.remove('hidden');
+    setTimeout(function () { otpInput.focus(); }, 50);
+  }
+  emailSendBtn.addEventListener('click', sendEmailCode);
+  emailInput.addEventListener('keydown', function (e) { if (e.key === 'Enter') sendEmailCode(); });
+
+  // После входа в существующий аккаунт — загрузить облачный прогресс и разрешить конфликт
+  async function restoreFromCloud() {
+    setSyncStatus('syncing');
+    const res = await GameStorage.online.loadProfile(authSession);
+    if (!res.ok) {
+      setSyncStatus('pending');
+      loginMsg.textContent = 'Вошли, но не удалось загрузить прогресс. Повторим при появлении сети.';
+      loginMsg.classList.add('show'); return;
+    }
+    const cloud = res.profile;
+    if (!cloud) { await pushProgress(); loginMsg.textContent = 'Вошли. К этому email пока не привязан прогресс — сохранили текущий.'; loginMsg.classList.add('show'); return; }
+    const cmp = compareProgress(localProgress(), cloud);
+    if (cmp === 'equal') { setSyncStatus('synced'); loginMsg.textContent = 'Вошли. Прогресс совпадает.'; loginMsg.classList.add('show'); }
+    else { showConflict(cloud); } // локальные отличаются от облачных — спрашиваем, что оставить
+  }
+
+  async function verifyEmail() {
+    const code = otpInput.value.trim();
+    if (code.length < 4) { otpErr.textContent = 'Введите код из письма.'; otpErr.classList.add('show'); return; }
+    otpVerifyBtn.disabled = true;
+    const res = await GameStorage.online.verifyEmailCode(emailFlow.email, code, emailFlow.linking);
+    otpVerifyBtn.disabled = false;
+    if (!res.ok) { otpErr.textContent = 'Код неверный или устарел. Проверьте письмо (и спам).'; otpErr.classList.add('show'); return; }
+    // Успех: обновляем сессию (если вернулась) и запоминаем email
+    if (res.session && res.session.userId) {
+      authSession = {
+        userId: res.session.userId, accessToken: res.session.accessToken, refreshToken: res.session.refreshToken,
+        nickname: (authSession && authSession.nickname) || emailFlow.email.split('@')[0].slice(0, 20),
+        email: res.session.email || emailFlow.email,
+      };
+    } else if (authSession) {
+      authSession.email = emailFlow.email;
+    }
+    GameStorage.set(AUTH_KEY, JSON.stringify(authSession));
+    otpModal.classList.add('hidden');
+    updateLoginUi();
+    if (emailMode === 'restore') {
+      await restoreFromCloud(); // загрузить облако + разрешить конфликт
+    } else {
+      await pushProgress();     // привязали email к текущему аккаунту → заливаем прогресс
+      loginMsg.textContent = 'Готово! Теперь прогресс можно перенести на другое устройство — войдите там по этому же email (' + emailFlow.email + ').';
+      loginMsg.classList.add('show');
+    }
+  }
+  otpVerifyBtn.addEventListener('click', verifyEmail);
+  otpInput.addEventListener('keydown', function (e) { if (e.key === 'Enter') verifyEmail(); });
+
+  // Фолбэк «вход по нику» с любого шага email (напр. письмо не пришло)
+  function fallbackToNick() {
+    emailModal.classList.add('hidden');
+    otpModal.classList.add('hidden');
+    promptNickname();
+  }
+  emailToNickBtn.addEventListener('click', fallbackToNick);
+  otpToNickBtn.addEventListener('click', fallbackToNick);
+  emailCancelBtn.addEventListener('click', function () { emailModal.classList.add('hidden'); });
+  otpCancelBtn.addEventListener('click', function () { otpModal.classList.add('hidden'); });
+
+  loginMenuBtn.addEventListener('click', function () { loginMsg.classList.remove('show'); startLogin(); });
+  loginBtn.addEventListener('click', function () { loginMsg.classList.remove('show'); startLogin(); });
+
+  // Кнопка «Войти» реагирует на смену сети (офлайн → «Нет соединения»)
+  window.addEventListener('online', updateLoginUi);
+  window.addEventListener('offline', updateLoginUi);
+  updateLoginUi();
+
+  // ===================== СИНХРОНИЗАЦИЯ ПРОГРЕССА С ОБЛАКОМ =====================
+  const syncStatusEl = document.getElementById('syncStatus');
+  const conflictModal = document.getElementById('conflictModal');
+  const conflictText = document.getElementById('conflictText');
+  const conflictCloud = document.getElementById('conflictCloud');
+  const conflictLocal = document.getElementById('conflictLocal');
+
+  let pendingSync = false; // есть несинхронизированные изменения (напр. накопились офлайн)
+  let syncTimer = null;
+
+  // Индикатор синхронизации (виден только когда игрок вошёл)
+  function setSyncStatus(state) {
+    if (!authSession) { syncStatusEl.classList.add('hidden'); return; }
+    syncStatusEl.classList.remove('hidden', 'synced', 'syncing', 'pending');
+    if (state === 'synced') { syncStatusEl.classList.add('synced'); syncStatusEl.textContent = 'Синхронизировано'; }
+    else if (state === 'syncing') { syncStatusEl.classList.add('syncing'); syncStatusEl.textContent = 'Синхронизация…'; }
+    else { syncStatusEl.classList.add('pending'); syncStatusEl.textContent = 'Ожидает интернета'; }
+  }
+
+  function localProgress() {
+    return { coins: coins, best: best, selected: selectedSkin, owned: (ownedSkins || []).slice() };
+  }
+
+  // Сравнение локального и облачного: 'equal' | 'local_ahead' | 'cloud_ahead'
+  function compareProgress(local, cloud) {
+    const cOwned = Array.isArray(cloud.owned_skins) ? cloud.owned_skins : [];
+    const cloudExtra = cOwned.some(function (s) { return local.owned.indexOf(s) === -1; });
+    const localExtra = local.owned.some(function (s) { return cOwned.indexOf(s) === -1; });
+    const same = local.coins === cloud.coins && local.best === cloud.best_score &&
+                 local.selected === cloud.selected_skin && !cloudExtra && !localExtra;
+    if (same) return 'equal';
+    if (cloud.coins > local.coins || cloud.best_score > local.best || cloudExtra) return 'cloud_ahead';
+    return 'local_ahead';
+  }
+
+  // Применить облачные данные к локальным
+  function applyCloudProfile(cloud) {
+    coins = Number(cloud.coins) || 0; saveCoins(); coinsEl.textContent = coins;
+    ownedSkins = Array.isArray(cloud.owned_skins) ? cloud.owned_skins.slice() : ['classic'];
+    if (ownedSkins.indexOf('classic') === -1) ownedSkins.push('classic');
+    selectedSkin = cloud.selected_skin || 'classic';
+    saveSkins();
+    best = Number(cloud.best_score) || 0; GameStorage.set(BEST_KEY, best); bestEl.textContent = best;
+    draw();
+  }
+
+  // Отправить локальный прогресс в облако
+  // Ошибка авторизации (аккаунт удалён / токен отозван или просрочен)
+  function isAuthError(res) { return !!res && (res.status === 401 || res.status === 403); }
+
+  // Пробуем обновить токен; если не вышло (аккаунт удалён) — выходим из аккаунта.
+  async function handleAuthFailure() {
+    if (authSession && authSession.refreshToken) {
+      const r = await GameStorage.online.refreshSession(authSession.refreshToken);
+      if (r.ok && r.session && r.session.userId) {
+        authSession = Object.assign({}, authSession, {
+          userId: r.session.userId, accessToken: r.session.accessToken, refreshToken: r.session.refreshToken,
+        });
+        GameStorage.set(AUTH_KEY, JSON.stringify(authSession));
+        return true; // токен обновлён — можно повторить запрос
+      }
+    }
+    signOut('Аккаунт не найден — вы вышли из него. Войдите заново.');
+    return false;
+  }
+
+  // Выход из аккаунта: чистим сессию, прячем индикатор, возвращаем кнопку «Войти».
+  function signOut(msg) {
+    authSession = null;
+    pendingSync = false;
+    GameStorage.remove(AUTH_KEY);
+    syncStatusEl.classList.add('hidden');
+    updateLoginUi();
+    if (msg) { loginMsg.textContent = msg; loginMsg.classList.add('show'); }
+  }
+
+  async function pushProgress(retried) {
+    if (!authSession) return;
+    if (!GameStorage.isOnline() || !GameStorage.online.enabled) { pendingSync = true; setSyncStatus('pending'); return; }
+    setSyncStatus('syncing');
+    const res = await GameStorage.online.saveProfile(authSession, collectLocalProfile(authSession.nickname));
+    if (res.ok) { pendingSync = false; setSyncStatus('synced'); return; }
+    if (isAuthError(res)) {
+      if (!retried) { const ok = await handleAuthFailure(); if (ok) return pushProgress(true); return; }
+      signOut('Сессия недействительна — вы вышли. Войдите заново.');
+      return;
+    }
+    pendingSync = true; setSyncStatus('pending'); // настоящая сетевая проблема
+  }
+
+  // Планировщик с дебаунсом: частые изменения (монеты) не спамят сеть.
+  // Вызывается при любом изменении прогресса; если игрок не вошёл — просто игнор (данные уже в localStorage).
+  function scheduleSync() {
+    if (!authSession) return;
+    if (!GameStorage.isOnline() || !GameStorage.online.enabled) { pendingSync = true; setSyncStatus('pending'); return; }
+    pendingSync = true; setSyncStatus('syncing');
+    clearTimeout(syncTimer);
+    syncTimer = setTimeout(pushProgress, 1200);
+  }
+
+  // Диалог конфликта
+  function showConflict(cloud) {
+    const l = localProgress();
+    const cOwned = Array.isArray(cloud.owned_skins) ? cloud.owned_skins.length : 0;
+    conflictText.innerHTML =
+      'Найдены разные сохранения.<br><br>' +
+      '<b>На этом устройстве:</b> монеты ' + l.coins + ', рекорд ' + l.best + ', скинов ' + l.owned.length + '.<br>' +
+      '<b>В облаке:</b> монеты ' + cloud.coins + ', рекорд ' + cloud.best_score + ', скинов ' + cOwned + '.';
+    conflictModal._cloud = cloud;
+    conflictModal.classList.remove('hidden');
+  }
+  conflictCloud.addEventListener('click', function () {
+    applyCloudProfile(conflictModal._cloud);
+    conflictModal.classList.add('hidden');
+    setSyncStatus('synced'); // локальное теперь совпадает с облаком
+  });
+  conflictLocal.addEventListener('click', function () {
+    conflictModal.classList.add('hidden');
+    pushProgress(); // локальное побеждает — заливаем в облако
+  });
+
+  // При загрузке: вошёл + есть сеть → сверяемся с облаком
+  async function syncOnLoad(retried) {
+    if (!authSession) { syncStatusEl.classList.add('hidden'); return; }
+    if (!GameStorage.isOnline() || !GameStorage.online.enabled) { setSyncStatus('pending'); pendingSync = true; return; }
+    setSyncStatus('syncing');
+    const res = await GameStorage.online.loadProfile(authSession);
+    if (!res.ok) {
+      if (isAuthError(res)) { // аккаунт удалён / токен недействителен
+        if (!retried) { const ok = await handleAuthFailure(); if (ok) return syncOnLoad(true); return; }
+        signOut('Аккаунт не найден — вы вышли. Войдите заново.');
+        return;
+      }
+      setSyncStatus('pending'); return; // настоящая сетевая проблема
+    }
+    const cloud = res.profile;
+    if (!cloud) { await pushProgress(); return; }                 // облако пустое — заливаем локальное
+    const cmp = compareProgress(localProgress(), cloud);
+    if (cmp === 'equal') { setSyncStatus('synced'); }
+    else if (cmp === 'local_ahead') { await pushProgress(); }     // локальное новее — заливаем
+    else { showConflict(cloud); }                                 // облако впереди/конфликт — спрашиваем
+  }
+
+  // Появилась сеть → досинхронизируем отложенное; пропала → «Ожидает интернета»
+  window.addEventListener('online', function () { if (authSession && pendingSync) pushProgress(); });
+  window.addEventListener('offline', function () { if (authSession) setSyncStatus('pending'); });
+
+  syncOnLoad(); // стартовая сверка с облаком
+
+  // Имя есть — сразу шлём; иначе показываем ввод имени
+  function ensureNameThenSend() {
+    const name = (GameStorage.get(NAME_KEY) || '').trim();
+    if (name) { sendScore(pendingScore, name); return; }
+    nameInput.value = '';
+    nameModal.classList.remove('hidden');
+    setTimeout(function () { nameInput.focus(); }, 50);
+  }
+
+  nameSubmit.addEventListener('click', function () {
+    const name = nameInput.value.trim().slice(0, 24);
+    if (!name) { nameInput.focus(); return; }  // пустое имя не принимаем
+    GameStorage.set(NAME_KEY, name);           // запоминаем, чтобы не спрашивать снова
+    nameModal.classList.add('hidden');
+    sendScore(pendingScore, name);
+  });
+  nameInput.addEventListener('keydown', function (e) { if (e.key === 'Enter') nameSubmit.click(); });
+  nameCancel.addEventListener('click', function () { nameModal.classList.add('hidden'); pendingScore = null; });
+
+  // Собственно отправка. Любая ошибка (лимит частоты, сеть) — молча, игра не ломается.
+  async function sendScore(score, name) {
+    if (score == null) return;
+    const res = await GameStorage.online.saveScoreOnline(score, { player_name: name });
+    if (res && res.ok) {
+      showLeaderboardMsg('Рекорд отправлен в общий топ!');
+    }
+    pendingScore = null;
+  }
+
+  // ===================== ЭКРАН «ТОП ИГРОКОВ» =====================
+  const topModal = document.getElementById('topModal');
+  const topList = document.getElementById('topList');
+  const topRetry = document.getElementById('topRetry');
+  const topClose = document.getElementById('topClose');
+  const topBtnStart = document.getElementById('topBtnStart');
+  const topBtnOver = document.getElementById('topBtnOver');
+
+  function topMessage(text) {
+    topList.innerHTML = '';
+    const d = document.createElement('div');
+    d.className = 'top-msg';
+    d.textContent = text;
+    topList.appendChild(d);
+  }
+
+  // Загрузка топа из Supabase (20 лучших по убыванию очков)
+  async function loadTop() {
+    topRetry.classList.add('hidden');
+
+    // Нет интернета → сообщение + «Повторить»
+    if (!GameStorage.isOnline()) {
+      topMessage('Топ недоступен без интернета');
+      topRetry.classList.remove('hidden');
+      return;
+    }
+    topMessage('Загрузка…');
+
+    const res = await GameStorage.online.loadLeaderboardOnline(20);
+    if (!res || !res.ok) {
+      // Онлайн есть, но не удалось (нет Supabase-ключей/сбой сети) → тоже даём «Повторить»
+      topMessage(GameStorage.online.enabled ? 'Не удалось загрузить топ' : 'Онлайн-топ недоступен');
+      topRetry.classList.remove('hidden');
+      return;
+    }
+    if (!res.data.length) {
+      topMessage('Пока нет рекордов. Стань первым!');
+      return;
+    }
+
+    // Рисуем строки: место, имя, счёт
+    topList.innerHTML = '';
+    res.data.slice(0, 20).forEach(function (row, i) {
+      const el = document.createElement('div');
+      el.className = 'top-row' + (i < 3 ? ' top-' + (i + 1) : '');
+      const rank = document.createElement('span'); rank.className = 'top-rank'; rank.textContent = (i + 1);
+      const name = document.createElement('span'); name.className = 'top-name'; name.textContent = row.player_name; // textContent — защита от XSS
+      const sc = document.createElement('span'); sc.className = 'top-score'; sc.textContent = row.score;
+      el.appendChild(rank); el.appendChild(name); el.appendChild(sc);
+      topList.appendChild(el);
+    });
+  }
+
+  function openTop() { topModal.classList.remove('hidden'); loadTop(); }
+  function closeTop() { topModal.classList.add('hidden'); }
+
+  topBtnStart.addEventListener('click', openTop);
+  topBtnOver.addEventListener('click', openTop);
+  topRetry.addEventListener('click', loadTop);
+  topClose.addEventListener('click', closeTop);
 
   // ===================== СТАРТ =====================
   // При загрузке только готовим поле и показываем стартовый экран.
