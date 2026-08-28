@@ -402,6 +402,30 @@
     }
     @keyframes offlinePulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
 
+    /* ===== Cookie-баннер согласия на аналитику ===== */
+    .cookie-banner {
+      position: fixed;
+      left: 50%;
+      bottom: 12px;
+      transform: translateX(-50%);
+      z-index: 70;
+      width: min(94vw, 520px);
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      background: var(--field);
+      color: var(--text);
+      border: 1px solid var(--accent);
+      border-radius: 12px;
+      padding: 14px 16px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.45);
+      font-size: 0.85rem;
+      line-height: 1.45;
+    }
+    .cookie-banner.hidden { display: none; }
+    .cookie-actions { display: flex; gap: 10px; justify-content: center; }
+    .cookie-actions button { flex: 1; padding: 10px; border-radius: 8px; font-size: 0.9rem; }
+
     /* ===== Баннер обновления PWA ===== */
     .update-banner {
       position: fixed;
@@ -503,6 +527,7 @@
       <button class="btn-secondary mute-btn">Звук: вкл</button>
       <button class="btn-secondary vibro-btn">Вибрация: вкл</button>
       <button class="btn-secondary cb-btn">Цвет: обычный</button>
+      <button id="analyticsBtn" class="btn-secondary">Аналитика: выкл</button>
       <button id="loginBtn" class="btn-secondary">Войти в аккаунт</button>
       <div class="share-msg" id="loginMsg"></div>
       <button id="resetBest" class="btn-secondary danger">Сбросить рекорд</button>
@@ -627,6 +652,18 @@
   <div class="update-banner hidden" id="updateBanner">
     <span>Доступна новая версия игры</span>
     <button id="updateBtn">Обновить</button>
+  </div>
+
+  <!-- Баннер согласия на аналитику (PostHog) — появляется при первом запуске -->
+  <div class="cookie-banner hidden" id="analyticsBanner">
+    <div class="cookie-text">
+      Мы используем PostHog для анализа того, как игроки пользуются игрой: какие экраны открывают,
+      сколько играют, покупают ли скины. Данные обезличены. Продолжая, вы соглашаетесь на сбор аналитики.
+    </div>
+    <div class="cookie-actions">
+      <button id="analyticsAccept">Согласиться</button>
+      <button id="analyticsDecline" class="btn-secondary">Отказаться</button>
+    </div>
   </div>
 
   <!-- Единый модуль хранения данных + точка подключения онлайна (Supabase, Модуль 5) -->
@@ -818,7 +855,9 @@
     getAudio();                           // разблокируем звук в рамках клика
     clearInterval(timer);
     timer = setInterval(step, SPEED);
+    matchStartTime = Date.now(); // засекаем длительность матча (для match_ended)
   }
+  let matchStartTime = 0;
 
   // ===================== ЕДА =====================
   // Ставит еду в случайную свободную клетку (не на теле змейки)
@@ -876,6 +915,8 @@
     vibrate([120, 50, 180]);       // более длинная вибрация проигрыша
     finalScoreEl.textContent = score;
     leaderboardMsg.classList.remove('show'); // сбрасываем прошлое сообщение
+    // Аналитика: конец матча со счётом и длительностью (секунды)
+    track('match_ended', { score: score, duration: matchStartTime ? Math.round((Date.now() - matchStartTime) / 1000) : 0 });
 
     // Достоин ли результат общего топа: не ниже локального рекорда и не ноль.
     // Считаем ДО обновления best, чтобы «повтор рекорда» тоже отправлялся.
@@ -1196,6 +1237,7 @@
     if (!res.ok) return;              // не хватает монет или уже куплен
     playPurchase();                   // звон монет
     vibrate([20, 30, 20]);            // вибрация покупки
+    track('skin_purchased', { skin_name: skin.id, price: skin.price }); // аналитика
     coins = res.state.coins;
     ownedSkins = res.state.owned;
     selectedSkin = res.state.selected; // купил — сразу применяем
@@ -1207,7 +1249,7 @@
     draw();
   }
 
-  function openShop() { renderShop(); shop.classList.remove('hidden'); }
+  function openShop() { renderShop(); shop.classList.remove('hidden'); track('shop_opened'); }
   function closeShop() { shop.classList.add('hidden'); }
 
   shopBtnStart.addEventListener('click', openShop);
@@ -1278,6 +1320,7 @@
     updateMuteBtns();
     updateVibroBtns();
     updateCbBtns();
+    updateAnalyticsBtn();
     settings.classList.remove('hidden');
   }
   function closeSettings() { settings.classList.add('hidden'); }
@@ -1306,6 +1349,75 @@
   window.addEventListener('online', updateOnlineStatus);   // сеть появилась → убрать плашку
   window.addEventListener('offline', updateOnlineStatus);  // сеть пропала → показать плашку
   updateOnlineStatus(); // начальное состояние при загрузке
+
+  // ===================== АНАЛИТИКА (PostHog) С СОГЛАСИЕМ =====================
+  const ANALYTICS_KEY = 'snakeAnalyticsConsent'; // 'granted' | 'declined'
+  const analyticsBanner = document.getElementById('analyticsBanner');
+  const analyticsAccept = document.getElementById('analyticsAccept');
+  const analyticsDecline = document.getElementById('analyticsDecline');
+  const analyticsBtns = document.querySelectorAll('#analyticsBtn'); // переключатель в настройках
+  let analyticsConsent = GameStorage.get(ANALYTICS_KEY); // null, если ещё не спрашивали
+  let phLoading = false;
+
+  function updateAnalyticsBtn() {
+    const on = analyticsConsent === 'granted';
+    analyticsBtns.forEach(function (b) { b.textContent = on ? 'Аналитика: вкл' : 'Аналитика: выкл'; });
+  }
+
+  // Отправить событие (только если аналитика согласована и PostHog поднят)
+  function track(event, props) {
+    try { if (window._posthog && analyticsConsent === 'granted') window._posthog.capture(event, props || {}); }
+    catch (e) { /* аналитика не должна ломать игру */ }
+  }
+
+  // Инициализация PostHog — только при согласии, наличии ключа и сети.
+  // Нет ключа (пока не настроен PostHog) → согласие сохранено, но ничего не грузим и не падаем.
+  async function initAnalytics() {
+    if (analyticsConsent !== 'granted') return;
+    const cfg = window.POSTHOG_CONFIG;
+    if (!cfg || !cfg.key) return;                 // ключа нет — подключится, когда добавишь его в .env.local
+    if (!GameStorage.isOnline()) return;          // офлайн — не грузим
+    if (window._posthog) { try { window._posthog.opt_in_capturing(); } catch (e) {} return; }
+    if (phLoading) return;
+    phLoading = true;
+    try {
+      const mod = await import('https://esm.sh/posthog-js@1');
+      const posthog = mod.default || mod.posthog || mod;
+      posthog.init(cfg.key, {
+        api_host: cfg.host || 'https://eu.i.posthog.com',
+        capture_pageview: false,
+        persistence: 'localStorage',
+      });
+      window._posthog = posthog;
+      track('game_started'); // событие «открытие игры» (для согласившихся)
+    } catch (e) { /* SDK не загрузился — играем без аналитики */ }
+    phLoading = false;
+  }
+
+  // Выключить сбор (отказ/выключение тумблера)
+  function disableAnalytics() {
+    try { if (window._posthog) window._posthog.opt_out_capturing(); } catch (e) {}
+  }
+
+  function setAnalyticsConsent(consent) {
+    analyticsConsent = consent;
+    GameStorage.set(ANALYTICS_KEY, consent);
+    updateAnalyticsBtn();
+    if (consent === 'granted') initAnalytics(); else disableAnalytics();
+  }
+
+  // Баннер: показываем при ПЕРВОМ запуске (согласие ещё не давали)
+  analyticsAccept.addEventListener('click', function () { analyticsBanner.classList.add('hidden'); setAnalyticsConsent('granted'); });
+  analyticsDecline.addEventListener('click', function () { analyticsBanner.classList.add('hidden'); setAnalyticsConsent('declined'); });
+
+  // Переключатель в настройках — игрок может передумать
+  analyticsBtns.forEach(function (b) {
+    b.addEventListener('click', function () { setAnalyticsConsent(analyticsConsent === 'granted' ? 'declined' : 'granted'); });
+  });
+
+  if (analyticsConsent === null) analyticsBanner.classList.remove('hidden'); // первый запуск → баннер
+  else if (analyticsConsent === 'granted') initAnalytics();                  // уже согласился → подключаем
+  updateAnalyticsBtn();
 
   // ===================== ПОДКЛЮЧЕНИЕ SUPABASE (Модуль 5) =====================
   // Безопасно и опционально: подключаемся ТОЛЬКО если есть конфиг (ключи) И интернет.
@@ -1822,7 +1934,7 @@
     });
   }
 
-  function openTop() { topModal.classList.remove('hidden'); loadTop(); }
+  function openTop() { topModal.classList.remove('hidden'); loadTop(); track('leaderboard_opened'); }
   function closeTop() { topModal.classList.add('hidden'); }
 
   topBtnStart.addEventListener('click', openTop);
